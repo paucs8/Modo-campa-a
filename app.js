@@ -63,7 +63,10 @@ const EXERCISE_KINDS = {
   run: 'Carrera (km + min)',
 };
 const STORAGE = { state: 'modo-campana', draft: 'modo-campana-draft' };
-const SYNC_LABEL = { cloud: 'Sincronizado en tu cuenta', saving: 'Guardando…', local: 'Solo en este dispositivo' };
+const SYNC_LABEL = {
+  cloud: 'Sincronizado', saving: 'Guardando…', error: 'Sin conexión: se subirá al volver',
+  signedout: 'Sin sincronizar: toca para entrar', off: 'Solo en este dispositivo', local: 'Solo en este dispositivo',
+};
 
 /* =========================================================
    2. Utilidades
@@ -144,7 +147,7 @@ let S = migrate(storage.get(STORAGE.state) || defaultState());
 const ui = {
   view: 'home', editing: false, open: {}, armed: null,
   addingCampaign: false, newIcon: 'star', newColor: 'pink',
-  draft: storage.get(STORAGE.draft), sync: 'local', exForm: null,
+  draft: storage.get(STORAGE.draft), sync: 'local', exForm: null, account: false,
 };
 
 /* =========================================================
@@ -274,45 +277,79 @@ function parseSet(kind, s) {
 /* =========================================================
    6. Guardado: local + nube
    ========================================================= */
-const cloud = { ref: null, timer: null, pending: false, queued: null };
+const CONFIG = window.APP_CONFIG || {};
+const cloud = { client: null, user: null, timer: null, pending: false, queued: null, channel: null };
 
 function setSync(state) {
   ui.sync = state;
   const el = document.getElementById('sync');
   if (el) { el.dataset.s = state; el.title = SYNC_LABEL[state]; el.setAttribute('aria-label', SYNC_LABEL[state]); }
 }
+const isTyping = () => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'SELECT'); };
+const stamp = s => s.updatedAt || 0;
+
+/** Guarda en el dispositivo y, si hay sesión, sube a Supabase poco después. */
 function persist() {
+  S.updatedAt = Date.now();
   storage.set(STORAGE.state, S);
-  if (!cloud.ref) return;
+  if (cloud.user) schedulePush();
+}
+function schedulePush(delay = 800) {
   cloud.pending = true; setSync('saving');
   clearTimeout(cloud.timer);
-  cloud.timer = setTimeout(async () => {
-    try { await cloud.ref.set({ state: JSON.stringify(S), at: Date.now() }); setSync('cloud'); } catch (e) { setSync('local'); }
-    cloud.pending = false;
-  }, 600);
+  cloud.timer = setTimeout(push, delay);
 }
-const isTyping = () => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'SELECT'); };
-function applyRemote(remote) { S = migrate(remote); storage.set(STORAGE.state, S); render(); }
-
-async function connectCloud() {
-  if (!window.claude || !window.claude.use) return;
-  try {
-    const [db, user] = await Promise.all([claude.use('db'), claude.use('user')]);
-    if (!db || !user) return;
-    const id = await user.id();
-    if (!id) return;
-    cloud.ref = db.doc(`data/users/${id}/save`);
-    cloud.ref.onSnapshot(snap => {
-      if (snap.metadata.hasPendingWrites || cloud.pending) return;
-      if (snap.exists) {
-        let remote; try { remote = JSON.parse(snap.data().state); } catch (e) { return; }
-        setSync('cloud');
-        if (isTyping()) cloud.queued = remote; else applyRemote(remote);
-      } else if (!snap.metadata.fromCache) {
-        cloud.ref.set({ state: JSON.stringify(S), at: Date.now() }).then(() => setSync('cloud'), () => setSync('local'));
-      }
-    }, () => setSync('local'));
-  } catch (e) { /* sin nube: se queda en local */ }
+async function push() {
+  const { error } = await cloud.client.from('saves').upsert({ user_id: cloud.user.id, state: S, updated_at: new Date(stamp(S) || Date.now()).toISOString() });
+  cloud.pending = false;
+  if (error) { setSync('error'); setTimeout(() => cloud.user && schedulePush(0), 15000); } else setSync('cloud');
+}
+function applyRemote(remote) {
+  if (isTyping()) { cloud.queued = remote; return; }
+  S = migrate(remote); storage.set(STORAGE.state, S); render();
+}
+/** Trae lo de la nube: gana la versión más reciente. */
+async function pull() {
+  if (!cloud.user || cloud.pending) return;
+  const { data, error } = await cloud.client.from('saves').select('state').eq('user_id', cloud.user.id).maybeSingle();
+  if (error) { setSync('error'); return; }
+  if (!data) { schedulePush(0); return; }
+  if (stamp(data.state) > stamp(S)) applyRemote(data.state);
+  else if (stamp(S) > stamp(data.state)) { schedulePush(0); return; }
+  setSync('cloud');
+}
+function listenRemote() {
+  if (cloud.channel) cloud.client.removeChannel(cloud.channel);
+  cloud.channel = cloud.client.channel('saves-' + cloud.user.id)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'saves', filter: `user_id=eq.${cloud.user.id}` }, payload => {
+      const remote = payload.new && payload.new.state;
+      if (remote && !cloud.pending && stamp(remote) > stamp(S)) applyRemote(remote);
+    })
+    .subscribe();
+}
+async function startSync(user) {
+  cloud.user = user;
+  ui.account = false;
+  render();
+  await pull();
+  listenRemote();
+}
+function stopSync() {
+  if (cloud.channel) cloud.client.removeChannel(cloud.channel);
+  Object.assign(cloud, { user: null, channel: null, pending: false });
+  setSync('signedout');
+}
+async function initCloud() {
+  if (!CONFIG.supabaseUrl || !CONFIG.supabaseKey || !window.supabase) { setSync('off'); return; }
+  cloud.client = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true } });
+  const { data } = await cloud.client.auth.getSession();
+  if (data.session) startSync(data.session.user); else setSync('signedout');
+  cloud.client.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_IN' && session && (!cloud.user || cloud.user.id !== session.user.id)) startSync(session.user);
+    if (event === 'SIGNED_OUT') stopSync();
+  });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pull(); });
+  window.addEventListener('online', () => pull());
 }
 document.addEventListener('focusout', () => setTimeout(() => {
   if (cloud.queued && !isTyping()) { const r = cloud.queued; cloud.queued = null; applyRemote(r); }
@@ -345,6 +382,20 @@ function viewTop() {
   return html`<header class="top"><div class="avatar"><img src="${IMG.face}" alt="AXIS"></div>
     <div class="hello"><b>Hola, ${esc(S.name)}</b><span>${esc(d[0].toUpperCase() + d.slice(1))}</span></div>
     <button class="sync" id="sync" data-s="${ui.sync}" title="${SYNC_LABEL[ui.sync]}" aria-label="${SYNC_LABEL[ui.sync]}" data-act="syncInfo"><i></i></button></header>`;
+}
+function viewAccount() {
+  if (!ui.account) return '';
+  if (ui.sync === 'off') return html`<section class="panel"><h3>Sincronización</h3><p class="hint">Falta configurar Supabase. Mientras tanto, todo se guarda en este dispositivo.</p></section>`;
+  if (cloud.user) return html`<section class="panel"><h3>Tu cuenta <button class="btn ghost" data-act="toggleAccount">Cerrar</button></h3>
+    <p class="hint">Conectado como <b>${esc(cloud.user.email || '')}</b>. ${SYNC_LABEL[ui.sync]}.</p>
+    <div class="edit-row"><button class="btn" data-act="syncNow">Sincronizar ahora</button><button class="btn danger" data-act="signOut">Cerrar sesión</button></div></section>`;
+  return html`<section class="panel"><h3>Sincronizar móvil y PC <button class="btn ghost" data-act="toggleAccount">Cerrar</button></h3>
+    <form class="stack-s" data-form="signIn">
+      <label class="fld"><span>Email</span><input name="email" type="email" autocomplete="email" required></label>
+      <label class="fld"><span>Contraseña</span><input name="password" type="password" autocomplete="current-password" minlength="6" required></label>
+      <div class="edit-row"><button class="btn primary">Entrar</button><button type="button" class="btn" data-act="signUp">Crear cuenta</button></div>
+    </form>
+    <p class="hint">Usa la misma cuenta en el móvil y en el PC. Al entrar se queda la versión más reciente de tu progreso.</p></section>`;
 }
 function viewHero() {
   const xp = totalXP(), L = levelOf(xp), from = xpForLevel(L), to = xpForLevel(L + 1), p = (xp - from) / (to - from);
@@ -569,7 +620,7 @@ function render() {
   const campaign = S.campaigns.find(c => c.id === ui.view);
   if (!campaign) ui.view = 'home';
   const y = window.scrollY;
-  document.getElementById('app').innerHTML = viewTop() + (campaign ? viewCampaign(campaign) : viewHome())
+  document.getElementById('app').innerHTML = viewTop() + viewAccount() + (campaign ? viewCampaign(campaign) : viewHome())
     + `<datalist id="ex-list">${COMMON_EXERCISES.map(n => `<option value="${n}">`).join('')}</datalist>`;
   document.getElementById('nav').innerHTML = viewNav();
   window.scrollTo(0, y);
@@ -610,7 +661,17 @@ function confirmTwice(id, change) {
 const repaint = fn => (...args) => { fn(...args); render(); };
 
 const actions = {
-  syncInfo: () => toast(SYNC_LABEL[ui.sync]),
+  syncInfo: repaint(() => { ui.account = !ui.account; }),
+  toggleAccount: repaint(() => { ui.account = false; }),
+  syncNow: () => { pull(); toast('Sincronizando…'); },
+  signOut: async () => { await cloud.client.auth.signOut(); ui.account = false; render(); toast('Sesión cerrada. Lo tuyo sigue en este dispositivo'); },
+  signUp: async el => {
+    const F = el.closest('form').elements;
+    if (!F.email.checkValidity() || !F.password.checkValidity()) { toast('Pon un email y una contraseña de 6 caracteres o más'); return; }
+    const { data, error } = await cloud.client.auth.signUp({ email: F.email.value.trim(), password: F.password.value });
+    if (error) { toast(authError(error)); return; }
+    if (!data.session) toast('Revisa tu correo para confirmar la cuenta y luego dale a Entrar');
+  },
   open: el => { ui.view = el.dataset.id; ui.addingCampaign = false; ui.editing = false; ui.exForm = null; render(); window.scrollTo(0, 0); },
   toggleEditing: repaint(() => { ui.editing = !ui.editing; }),
   toggleLevel: el => { const card = el.closest('.lv-card'); ui.open[el.dataset.k] = card.dataset.open !== '1'; render(); },
@@ -706,7 +767,15 @@ const actions = {
 };
 
 // Formularios (data-form="nombre")
+const authError = e => /invalid login/i.test(e.message) ? 'Email o contraseña incorrectos'
+  : /not confirmed/i.test(e.message) ? 'Confirma tu email desde el correo que te llegó'
+  : /already registered/i.test(e.message) ? 'Ya existe esa cuenta: dale a Entrar'
+  : 'No se pudo: ' + e.message;
 const forms = {
+  signIn: async (f, F) => {
+    const { error } = await cloud.client.auth.signInWithPassword({ email: F.email.value.trim(), password: F.password.value });
+    if (error) toast(authError(error)); else toast('Conectado. Sincronizando…');
+  },
   addMission: (f, F) => {
     const c = findCampaign(f.dataset.c), l = c.levels.find(x => x.id === f.dataset.l), name = F.n.value.trim();
     if (!name) return;
@@ -777,7 +846,7 @@ document.addEventListener('keydown', ev => {
 });
 
 render();
-connectCloud();
+initCloud();
 })();
 
 if ('serviceWorker' in navigator) {

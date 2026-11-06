@@ -9,14 +9,22 @@ Mis objetivos como un videojuego: campañas por niveles, misiones con XP, peso, 
 | `index.html` | La página. Solo carga estilos y script. |
 | `styles.css` | Todo el diseño (tokens de color arriba, modo claro y oscuro). |
 | `app.js` | La app, por bloques: constantes, datos por defecto y migraciones, cálculos, guardado, vistas, acciones y eventos. |
+| `config.js` | URL y clave pública de Supabase. |
+| `supabase.sql` | Tabla y reglas de acceso para Supabase. |
 | `sw.js` | Hace que se pueda instalar y abrir sin conexión. Sube `VERSION` al cambiar archivos. |
 | `manifest.webmanifest` | Nombre, colores e iconos de la app instalada. |
 | `assets/` | AXIS y los objetos del inventario en pixel art. |
 | `icons/` | Iconos de la app. |
 
-## Datos
+## Datos y sincronización
 
-De momento se guardan en el propio dispositivo (`localStorage`). La sincronización entre móvil y PC va después, con Supabase.
+Todo se guarda primero en el dispositivo (`localStorage`). Con sesión iniciada, se sube a Supabase y se sincroniza entre móvil y PC (gana la versión más reciente, y los cambios llegan en directo).
+
+Configuración, una sola vez:
+1. Crear un proyecto en Supabase.
+2. SQL Editor → pegar `supabase.sql` → Run.
+3. Poner la URL y la clave `anon` del proyecto en `config.js`.
+4. Authentication → URL Configuration → Site URL: la dirección de GitHub Pages.
 
 ## Instalar
 

@@ -45,6 +45,9 @@ h2,h3{text-wrap:balance}
 .sync i{width:10px;height:10px;border-radius:50%;background:#3FBF6F}
 .sync[data-s="local"] i{background:var(--orange)}
 .sync[data-s="saving"] i{background:var(--blue)}
+.sync[data-s="signedout"] i{background:var(--orange)}
+.sync[data-s="error"] i{background:var(--red)}
+.sync[data-s="off"] i,.sync[data-s="local"] i{background:var(--muted)}
 
 /* Hero */
 .hero{position:relative;background:var(--lilac);color:var(--on-color);border-radius:var(--r);padding:20px 20px 18px;margin-top:34px;min-height:200px;display:flex;flex-direction:column;gap:12px}
