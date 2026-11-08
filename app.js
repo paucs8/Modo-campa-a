@@ -39,6 +39,7 @@ const GLYPH = {
   plus: svg('<path d="M12 5v14M5 12h14"/>', 'width="22" height="22"'),
   check: svg('<path d="m5 12.5 4.5 4.5L19 7.5"/>', 'stroke-width="3.2"'),
   chev: svg('<path d="m6 9 6 6 6-6"/>', 'width="20" height="20" stroke-width="2.4"'),
+  lock: svg('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', 'width="14" height="14"'),
   trophy: svg('<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5v1a3 3 0 0 0 3 3M16 6h3v1a3 3 0 0 1-3 3M12 13v4M8 20h8M10 17h4v3h-4z"/>'),
   share: svg('<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6"/>'),
   bag: svg('<path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>'),
@@ -149,7 +150,7 @@ const defaultRewards = () => [
 ];
 // Premios de ejemplo de la versión anterior: si siguen sin tocar, se cambian por los nuevos
 const OLD_REWARDS = ['Un café o un snack fuera', 'Tarde de videojuegos o serie', 'Un día libre de entreno sin culpa', 'Cena fuera o pedir comida', 'Un capricho (ropa, algo para el skate…)'];
-const defaultState = () => ({ v: 5, name: '', onboarded: false, color: '#C7B5FF', look: Character.randomLook(), photo: null, xpDays: {}, weight: { start: null, goal: null, log: [] }, train: [], sessions: [], routines: defaultRoutines(), campaigns: defaultCampaigns(),
+const defaultState = () => ({ v: 5, name: '', onboarded: false, color: '#C7B5FF', look: Character.randomLook(), photo: null, xpDays: {}, wardrobe: [], wins: [], recapSeen: null, nudgesSent: {}, weight: { start: null, goal: null, log: [] }, train: [], sessions: [], routines: defaultRoutines(), campaigns: defaultCampaigns(),
   daily: {}, activity: {}, rewards: defaultRewards(), purchases: [], unequipped: [] });
 
 /** Pone al día datos guardados por versiones anteriores. */
@@ -178,6 +179,8 @@ function migrate(s) {
   if (!s.look || s.look.preset === 'axis') s.look = Character.randomLook();
   delete s.look.preset; delete s.look.star;
   s.look = Character.upgrade(s.look); // personaje por capas (v2)
+  // Armario especial, semanas ganadas, cierre del lunes visto y cañas enviadas
+  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {};
   if (s.photo === undefined) s.photo = null;
   s.v = 5;
   return s;
@@ -192,7 +195,7 @@ const ui = {
   addingCampaign: false, newIcon: 'star', newColor: 'pink',
   draft: storage.get(STORAGE.draft), sync: 'local', exForm: null, account: false,
   addingReward: false, bossHit: null,
-  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false }, profileExtras: true, lookTab: 'cara', playerId: null,
+  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false }, profileExtras: true, prevCols: true, lookTab: 'cara', playerId: null, nudgeQueue: [],
 };
 
 /* =========================================================
@@ -358,6 +361,17 @@ function activeStreak() {
   let n = 0; while (days.has(dateKey(d))) { n++; d.setDate(d.getDate() - 1); }
   return n;
 }
+/** ¿Está desbloqueada una prenda especial? Devuelve también cómo se consigue. */
+function unlockState(key) {
+  const def = Character.PREMIUM[key];
+  if (!def) return { ok: true };
+  if (def.level) return { ok: levelOf(totalXP()) >= def.level, how: `Sale en el nivel ${def.level}`, short: `Nv ${def.level}` };
+  if (def.cost) return { ok: S.wardrobe.includes(key), how: `Se compra en la tienda por ${def.cost} monedas`, short: `${def.cost}`, cost: def.cost };
+  return { ok: S.wins.length > 0, how: 'Se gana quedando primero en una liga semanal', short: 'Gana' };
+}
+const lastMondayKey = () => { const d = new Date(); d.setDate(d.getDate() - 7); return mondayKey(d); };
+const xpBefore = date => { const k = Object.keys(S.xpDays).filter(d => d < date).sort().pop(); return k ? S.xpDays[k] : 0; };
+const myPrevWeekXP = () => Math.max(0, xpBefore(mondayKey()) - xpBefore(lastMondayKey()));
 function daysLeftInWeek() { return 7 - ((new Date().getDay() + 6) % 7); }
 
 function weekDays() {
@@ -460,19 +474,30 @@ async function publishProfile() {
   const xp = totalXP();
   const row = { user_id: cloud.user.id, name: S.name.slice(0, 24), color: S.color, level: levelOf(xp), xp,
     week: mondayKey(), week_xp: weekXP(), streak: activeStreak(), chests_week: chestsThisWeek(), updated_at: new Date().toISOString() };
-  let { error } = await cloud.client.from('profiles').upsert(ui.profileExtras ? Object.assign({ photo: S.photo, look: Object.assign({}, S.look, { items: wearing() }) }, row) : row);
-  if (error && missingColumn(error)) { ui.profileExtras = false; ({ error } = await cloud.client.from('profiles').upsert(row)); render(); }
+  const extras = { photo: S.photo, look: Object.assign({}, S.look, { items: wearing() }) }, prev = { prev_week: lastMondayKey(), prev_week_xp: myPrevWeekXP() };
+  // Si a la tabla le faltan columnas (SQL sin ejecutar), se publica lo que se pueda
+  const tries = [[ui.profileExtras, ui.prevCols], [ui.profileExtras, false], [false, false]].filter(([e, p], i, a) => i === 0 || (e !== a[0][0] || p !== a[0][1]));
+  let error = null;
+  for (const [withExtras, withPrev] of tries) {
+    ({ error } = await cloud.client.from('profiles').upsert(Object.assign({}, row, withExtras ? extras : {}, withPrev ? prev : {})));
+    if (!error || !missingColumn(error)) { if (!error && (ui.profileExtras !== withExtras || ui.prevCols !== withPrev)) { ui.profileExtras = withExtras; ui.prevCols = withPrev; render(); } break; }
+  }
   if (missingTable(error)) { ui.rankingState = 'missing'; render(); }
 }
 let rankingTimer = null;
 async function loadRanking() {
   if (!cloud.user) return;
   const cols = 'user_id,name,color,level,xp,week,week_xp,streak,chests_week';
-  let { data, error } = await cloud.client.from('profiles').select(ui.profileExtras ? cols + ',photo,look' : cols).limit(200);
-  if (error && missingColumn(error)) { ui.profileExtras = false; ({ data, error } = await cloud.client.from('profiles').select(cols).limit(200)); }
+  const tries = [[ui.profileExtras, ui.prevCols], [ui.profileExtras, false], [false, false]];
+  let data = null, error = null;
+  for (const [withExtras, withPrev] of tries) {
+    ({ data, error } = await cloud.client.from('profiles').select(cols + (withExtras ? ',photo,look' : '') + (withPrev ? ',prev_week,prev_week_xp' : '')).limit(200));
+    if (!error || !missingColumn(error)) { ui.profileExtras = withExtras; ui.prevCols = withPrev; break; }
+  }
   if (error) { ui.rankingState = missingTable(error) ? 'missing' : 'error'; render(); return; }
   ui.ranking = data; ui.rankingState = 'ok';
   if (!isTyping()) render();
+  maybeShowRecap();
 }
 function listenRanking() {
   if (cloud.rankChannel) cloud.client.removeChannel(cloud.rankChannel);
@@ -480,6 +505,70 @@ function listenRanking() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => { clearTimeout(rankingTimer); rankingTimer = setTimeout(loadRanking, 400); })
     .subscribe();
 }
+/* ---------- Darse caña: un aviso de ánimo entre amigos ---------- */
+async function loadNudges() {
+  if (!cloud.user) return;
+  const { data, error } = await cloud.client.from('nudges').select('id,from_id,created_at').eq('to_id', cloud.user.id).eq('seen', false).limit(20);
+  if (!error && data && data.length) queueNudges(data);
+}
+function listenNudges() {
+  if (cloud.nudgeChannel) cloud.client.removeChannel(cloud.nudgeChannel);
+  cloud.nudgeChannel = cloud.client.channel('nudges-' + cloud.user.id)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'nudges', filter: `to_id=eq.${cloud.user.id}` }, p => p.new && queueNudges([p.new]))
+    .subscribe();
+}
+function queueNudges(rows) {
+  const known = new Set(ui.nudgeQueue.map(n => n.id));
+  ui.nudgeQueue.push(...rows.filter(r => !known.has(r.id)));
+  if (!document.querySelector('.nudge-pop')) showNextNudge();
+}
+async function showNextNudge() {
+  const n = ui.nudgeQueue[0];
+  if (!n) return;
+  if (!ui.ranking) await loadRanking();
+  const from = (ui.ranking || []).find(r => r.user_id === n.from_id) || { name: 'Alguien', color: '#C7B5FF' };
+  const el = document.createElement('div');
+  el.className = 'lvlup nudge-pop';
+  el.innerHTML = html`<div style="background:${colorHex(from.color)};color:${inkFor(colorHex(from.color))}"><span class="pill">${GLYPH.star}¡Te dan caña!</span>
+    ${from.look ? `<img class="nudge-char" src="${Character.image(from.look, { items: from.look.items || [] })}" alt="">` : ''}
+    <h2>${esc(from.name)} te dice: ¡vamos!</h2><p class="hint" style="color:inherit">Haz una misión hoy y no te quedes atrás.</p>
+    <button class="btn dark wide">¡Voy!</button></div>`;
+  el.addEventListener('click', async () => {
+    el.remove();
+    const done = ui.nudgeQueue.shift();
+    if (done && cloud.user) await cloud.client.from('nudges').update({ seen: true }).eq('id', done.id);
+    showNextNudge();
+  });
+  document.body.appendChild(el);
+}
+
+/* ---------- Cierre del lunes: resultados de la semana pasada, una vez ---------- */
+function lastWeekRows() {
+  const lastMonday = lastMondayKey();
+  return (ui.ranking || []).map(r => {
+    const me = cloud.user && r.user_id === cloud.user.id;
+    const xp = me ? myPrevWeekXP() : r.prev_week === lastMonday ? r.prev_week_xp : r.week === lastMonday ? r.week_xp : 0;
+    return Object.assign({}, r, me ? { name: S.name, color: S.color, look: Object.assign({}, S.look, { items: wearing() }), me: true } : {}, { last_xp: xp || 0 });
+  }).filter(r => r.last_xp > 0).sort((a, b) => b.last_xp - a.last_xp);
+}
+function maybeShowRecap() {
+  const lastMonday = lastMondayKey();
+  if (!S.onboarded || !cloud.user || S.recapSeen === lastMonday || document.querySelector('.recap-pop')) return;
+  const rows = lastWeekRows();
+  if (rows.length < 2) return;
+  const pos = rows.findIndex(r => r.me), won = pos === 0;
+  update(s => { s.recapSeen = lastMonday; if (won && !s.wins.includes(lastMonday)) s.wins.push(lastMonday); }, { reward: false });
+  const top = rows.slice(0, 3), order = [1, 0, 2].filter(i => top[i]);
+  const el = document.createElement('div');
+  el.className = 'lvlup recap-pop';
+  el.innerHTML = html`<div><span class="pill">${GLYPH.trophy}Semana terminada</span><h2>${won ? '¡Has ganado la semana!' : `Ganó ${esc(rows[0].name)}`}</h2>
+    <div class="mini-podium">${order.map(i => `<div class="mp mp${i + 1}"><img src="${Character.image(top[i].look || Character.BASE, { items: (top[i].look && top[i].look.items) || [] })}" alt=""><span class="mp-block"><b>${i + 1}</b><small class="num">${top[i].last_xp} XP</small></span><span class="mp-name">${esc(top[i].name)}</span></div>`).join('')}</div>
+    <p class="hint on-lilac">${pos < 0 ? 'La semana pasada no sumaste XP. Esta semana empieza de cero para todos.' : won ? 'Ya puedes ponerte la corona en tu perfil.' : `Quedaste ${pos + 1}º de ${rows.length}. Esta semana empieza de cero.`}</p>
+    <button class="btn dark wide">${won ? 'Ponerme la corona' : 'A por esta semana'}</button></div>`;
+  el.addEventListener('click', () => { el.remove(); if (won) { ui.view = 'profile'; ui.lookTab = 'extras'; render(); window.scrollTo(0, 0); } });
+  document.body.appendChild(el);
+}
+
 /** Tabla ordenada: en la semana manda la XP de esta semana (quien no ha jugado esta semana va con 0). */
 function rankedPlayers(tab = ui.rankTab) {
   const monday = mondayKey();
@@ -527,13 +616,16 @@ async function startSync(user, { fresh = false } = {}) {
   if (fresh) await mergeWithCloud(); else await pull();
   listenRemote();
   listenRanking();
+  listenNudges();
   publishProfile();
   loadRanking();
+  loadNudges();
 }
 function stopSync() {
   if (cloud.channel) cloud.client.removeChannel(cloud.channel);
   if (cloud.rankChannel) cloud.client.removeChannel(cloud.rankChannel);
-  Object.assign(cloud, { user: null, channel: null, rankChannel: null, pending: false });
+  if (cloud.nudgeChannel) cloud.client.removeChannel(cloud.nudgeChannel);
+  Object.assign(cloud, { user: null, channel: null, rankChannel: null, nudgeChannel: null, pending: false });
   Object.assign(ui, { ranking: null, rankingState: 'idle' });
   setSync('signedout');
 }
@@ -678,7 +770,11 @@ function viewLookControls(L) {
     ].join('');
   }
 }
-const chip = (field, value, label, current) => `<button type="button" class="chip-btn" data-act="setLook" data-f="${field}" data-v="${value}" aria-pressed="${String(current) === String(value)}">${label}</button>`;
+const chip = (field, value, label, current) => {
+  const lock = unlockState(field + ':' + value);
+  if (!lock.ok) return `<button type="button" class="chip-btn locked" data-act="lockedLook" data-k="${field}:${value}" title="${esc(lock.how)}">${GLYPH.lock}${label} <small>${esc(lock.short)}</small></button>`;
+  return `<button type="button" class="chip-btn ${Character.PREMIUM[field + ':' + value] ? 'special' : ''}" data-act="setLook" data-f="${field}" data-v="${value}" aria-pressed="${String(current) === String(value)}">${label}</button>`;
+};
 function viewProfile() {
   const L = Character.upgrade(S.look), xp = totalXP();
   return html`<section class="c-hero profile-hero" ${heroStyle()}>
@@ -757,7 +853,9 @@ function viewPlayer() {
       <p class="hint num">${r.xp} XP en total.</p></section>
     <section class="panel"><h3>Objetos <span class="label">${items.length}/${ITEMS.length}</span></h3>
       ${items.length ? `<div class="mini-items">${items.map(i => `<span title="${i.name}"><img src="${IMG[i.key]}" alt="${i.name}"></span>`).join('')}</div>` : '<p class="hint">Todavía no ha desbloqueado ninguno.</p>'}</section>
-    ${r.me ? '<button class="btn wide" data-act="open" data-id="profile">Editar mi perfil</button>' : ''}
+    ${r.me ? '<button class="btn wide" data-act="open" data-id="profile">Editar mi perfil</button>'
+      : S.nudgesSent[r.user_id] === today() ? '<button class="btn wide" disabled>Ya le has dado caña hoy</button>'
+      : `<button class="btn primary wide" data-act="nudge" data-id="${esc(r.user_id)}">¡Vamos! Dale caña a ${esc(r.name)}</button><p class="hint center">Le saldrá un aviso al abrir la app. Una vez al día.</p>`}
     <button class="btn ghost wide" data-act="open" data-id="ranking">Volver al ranking</button>`;
 }
 function viewRanking() {
@@ -1044,6 +1142,15 @@ function viewShop() {
         <input name="c" type="number" inputmode="numeric" min="10" max="99999" step="10" value="300" aria-label="Precio en monedas" style="width:96px"><button class="btn primary">Añadir</button></form>`
         : '<button class="btn add-ex" data-act="addRewardForm">+ Premio</button>'}
       <p class="hint">Ganas monedas con cada misión (la mitad de su XP), cada entreno (+${COINS.train}), cada récord (+${COINS.record}) y el cofre diario.</p></section>
+    <section class="panel"><h3>Armario especial <span class="label">para tu personaje</span></h3>
+      <ul class="wardrobe">${Object.entries(Character.PREMIUM).map(([key, def]) => {
+        const [field, value] = key.split(':'), st = unlockState(key), armed = ui.armed === 'ward:' + key;
+        const preview = Object.assign({}, Character.upgrade(S.look), { [field]: value }, value === 'llamas' ? { stripe: '#E07A2E', topColor: '#1F1F24' } : {}, value === 'capa' ? { bagColor: '#C0392B' } : {});
+        const action = st.ok ? '<span class="owned">Lo tienes</span>'
+          : st.cost ? (have >= st.cost ? `<button class="btn ${armed ? 'primary' : ''}" data-act="buyWardrobe" data-k="${key}">${armed ? '¿Comprar?' : 'Comprar'}</button>` : `<span class="need num">Te faltan ${st.cost - have}</span>`)
+          : `<span class="need">${esc(st.how)}</span>`;
+        return `<li class="${st.ok ? 'got' : ''}"><img src="${Character.image(preview)}" alt=""><div class="txt"><b>${esc(def.name)}</b>${when(st.cost, coinBadge(st.cost || 0))}</div>${action}</li>`;
+      })}</ul></section>
     ${when(recent.length, html`<section class="panel"><h3>Canjeado</h3><ul class="hist">${recent.map(p =>
       `<li><b>${esc(p.name)}</b><span class="num">${shortDate(p.d)} · ${p.cost}</span>${when(ui.editing, confirmBtn('deletePurchase', p.id, 'Devolver'))}</li>`)}</ul></section>`)}`;
 }
@@ -1167,6 +1274,24 @@ const actions = {
   randomLook: () => update(s => { s.look = Character.randomLook(); }, { reward: false }),
   removePhoto: () => update(s => { s.photo = null; }, { reward: false }),
   rankTab: repaint(el => { ui.rankTab = el.dataset.k; }),
+  lockedLook: el => { const st = unlockState(el.dataset.k); toast(`${Character.PREMIUM[el.dataset.k].name}: ${st.how.charAt(0).toLowerCase() + st.how.slice(1)}`); },
+  buyWardrobe: el => {
+    const key = el.dataset.k, def = Character.PREMIUM[key];
+    if (!def || !def.cost || coins() < def.cost || S.wardrobe.includes(key)) return;
+    if (ui.armed !== 'ward:' + key) { ui.armed = 'ward:' + key; render(); return; }
+    ui.armed = null;
+    update(s => { s.wardrobe.push(key); s.purchases.push({ id: uid(), name: def.name, cost: def.cost, d: today(), wardrobe: key }); }, { reward: false });
+    toast(`¡${def.name} es tuyo! Póntelo en tu perfil`);
+  },
+  nudge: async el => {
+    const to = el.dataset.id;
+    if (!cloud.user || S.nudgesSent[to] === today()) return;
+    const { error } = await cloud.client.from('nudges').insert({ from_id: cloud.user.id, to_id: to });
+    if (error) { toast(missingTable(error) ? 'Para esto falta ejecutar supabase-social.sql en Supabase' : 'No se ha podido enviar. Prueba otra vez'); return; }
+    update(s => { s.nudgesSent[to] = today(); }, { reward: false });
+    const r = (ui.ranking || []).find(x => x.user_id === to);
+    toast(`Le has dado caña a ${r ? r.name : 'tu amigo'}`);
+  },
   openPlayer: el => { ui.playerId = el.dataset.id; ui.view = 'player'; render(); window.scrollTo(0, 0); },
   shareApp: async () => {
     const url = location.origin + location.pathname, text = `Te reto en Modo Campaña. Hazte una cuenta y a ver quién sube más esta semana: ${url}`;
@@ -1197,7 +1322,11 @@ const actions = {
   },
   addRewardForm: repaint(() => { ui.addingReward = true; }),
   deleteReward: el => confirmTwice(el.dataset.id, s => { s.rewards = s.rewards.filter(x => x.id !== el.dataset.id); }),
-  deletePurchase: el => confirmTwice(el.dataset.id, s => { s.purchases = s.purchases.filter(x => x.id !== el.dataset.id); }),
+  deletePurchase: el => confirmTwice(el.dataset.id, s => {
+    const p = s.purchases.find(x => x.id === el.dataset.id);
+    if (p && p.wardrobe) s.wardrobe = s.wardrobe.filter(k => k !== p.wardrobe);
+    s.purchases = s.purchases.filter(x => x.id !== el.dataset.id);
+  }),
   deleteMission: el => { const { l, m } = findMission(el); confirmTwice(m.id, () => { l.missions = l.missions.filter(x => x !== m); }); },
   addLevel: () => { const c = activeCampaign(), l = level(`Nivel ${c.levels.length + 1}`, []); ui.open[c.id + l.id] = true; update(() => c.levels.push(l), { reward: false }); },
   deleteLevel: (el, ev) => { ev.preventDefault(); const c = findCampaign(el.dataset.c); confirmTwice(el.dataset.id, () => { c.levels = c.levels.filter(x => x.id !== el.dataset.id); }); },
@@ -1334,6 +1463,9 @@ function mergeProgress(cur, inc) {
   });
   inc.rewards.forEach(r => { if (!cur.rewards.some(x => x.id === r.id || x.name === r.name)) cur.rewards.push(r); });
   inc.purchases.forEach(p => { if (!cur.purchases.some(x => x.id === p.id)) cur.purchases.push(p); });
+  cur.wardrobe = [...new Set([...(cur.wardrobe || []), ...(inc.wardrobe || [])])];
+  cur.wins = [...new Set([...(cur.wins || []), ...(inc.wins || [])])];
+  if ((inc.recapSeen || '') > (cur.recapSeen || '')) cur.recapSeen = inc.recapSeen;
   // Campañas: misiones emparejadas por nivel y nombre
   inc.campaigns.forEach(ic => {
     const c = cur.campaigns.find(x => x.id === ic.id || x.name === ic.name);
@@ -1421,7 +1553,8 @@ document.addEventListener('click', ev => {
   const el = ev.target.closest('[data-act]');
   if (!el) return;
   const name = el.dataset.act;
-  if (!name.startsWith('delete') && name !== 'discardSession') ui.armed = null;
+  // Los botones de dos toques (borrar, comprar, canjear) guardan su confirmación
+  if (!name.startsWith('delete') && !name.startsWith('buy') && name !== 'discardSession') ui.armed = null;
   if (actions[name]) actions[name](el, ev);
 });
 document.addEventListener('submit', ev => {

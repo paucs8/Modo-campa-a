@@ -1,6 +1,6 @@
 // Guarda la app en el móvil para que abra rápido y funcione sin conexión.
 // Al cambiar cualquier archivo, sube VERSION para que los móviles descarguen la nueva.
-const VERSION = 'v14';
+const VERSION = 'v15';
 const CACHE = `modo-campana-${VERSION}`;
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'config.js', 'character.js', 'scene.js', 'manifest.webmanifest',

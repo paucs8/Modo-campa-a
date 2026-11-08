@@ -13,6 +13,8 @@ Mis objetivos como un videojuego: campañas por niveles, misiones con XP, peso, 
 | `supabase.sql` | Tabla y reglas de acceso para Supabase. |
 | `supabase-ranking.sql` | Perfiles públicos para el ranking entre amigos. |
 | `supabase-perfil.sql` | Foto y personaje de cada jugador en el ranking. |
+| `supabase-social.sql` | Darse caña entre amigos y resultados de la semana pasada. |
+| `scene.js` | Fondo de la plaza y corona en pixel art. |
 | `character.js` | Dibuja el personaje pixel de cada jugador con sus colores. |
 | `sw.js` | Hace que se pueda instalar y abrir sin conexión. Sube `VERSION` al cambiar archivos. |
 | `manifest.webmanifest` | Nombre, colores e iconos de la app instalada. |
@@ -39,6 +41,7 @@ Configuración, una sola vez:
 4. Authentication → URL Configuration → Site URL: la dirección de GitHub Pages.
 5. Para el ranking: SQL Editor → pegar `supabase-ranking.sql` → Run.
 6. Para fotos y personajes en el ranking: pegar `supabase-perfil.sql` → Run.
+7. Para darse caña y el cierre del lunes: pegar `supabase-social.sql` → Run.
 
 ## Instalar
 

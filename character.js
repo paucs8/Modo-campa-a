@@ -10,16 +10,26 @@ const W = 44, H = 82;
 // ---------- Catálogo: lo que se puede elegir ----------
 const STYLES = {
   hairStyle: { corto: 'Corto', revuelto: 'Revuelto', rapado: 'Rapado', melena: 'Melena', largo: 'Largo', mono: 'Moño', coletas: 'Coletas', trenzas: 'Trenzas', rizos: 'Rizos', afro: 'Afro' },
-  glasses: { no: 'Sin gafas', finas: 'Finas', pasta: 'De pasta', sol: 'De sol' },
+  glasses: { no: 'Sin gafas', finas: 'Finas', pasta: 'De pasta', sol: 'De sol', estrella: 'De estrella' },
   beard: { no: 'Nada', bigote: 'Bigote', barba: 'Barba' },
-  head: { no: 'Nada', gorra: 'Gorra', gorro: 'Gorro', bucket: 'Bucket', bandana: 'Bandana', horquillas: 'Horquillas' },
+  head: { no: 'Nada', gorra: 'Gorra', gorro: 'Gorro', bucket: 'Bucket', bandana: 'Bandana', horquillas: 'Horquillas', gato: 'Gorro de gato', corona: 'Corona' },
   top: { camiseta: 'Camiseta', sudadera: 'Sudadera', jersey: 'Jersey', capas: 'Capas', camisa: 'Camisa abierta', chaqueta: 'Chaqueta' },
-  pattern: { liso: 'Liso', rayas: 'Rayas', cuadros: 'Cuadros', franja: 'Franja' },
+  pattern: { liso: 'Liso', rayas: 'Rayas', cuadros: 'Cuadros', franja: 'Franja', llamas: 'Llamas' },
   bottom: { cargo: 'Cargo ancho', vaqueros: 'Vaqueros', chandal: 'Chándal', corto: 'Pantalón corto', falda: 'Falda' },
   legs: { piel: 'Sin medias', medias: 'Medias', rejilla: 'Rejilla', rayas: 'Medias de rayas' },
-  shoes: { bambas: 'Bambas', altas: 'Bambas altas', botas: 'Botas', plataformas: 'Plataformas' },
-  bag: { no: 'Nada', bolso: 'Bolso cruzado', mochila: 'Mochila', rinonera: 'Riñonera' },
+  shoes: { bambas: 'Bambas', altas: 'Bambas altas', botas: 'Botas', plataformas: 'Plataformas', doradas: 'Doradas' },
+  bag: { no: 'Nada', bolso: 'Bolso cruzado', mochila: 'Mochila', rinonera: 'Riñonera', capa: 'Capa' },
 };
+// Prendas especiales: se ganan, se compran con monedas o salen al subir de nivel
+const PREMIUM = {
+  'head:corona': { name: 'Corona', how: 'win' },
+  'glasses:estrella': { name: 'Gafas de estrella', cost: 300 },
+  'head:gato': { name: 'Gorro de gato', cost: 400 },
+  'pattern:llamas': { name: 'Estampado de llamas', cost: 500 },
+  'shoes:doradas': { name: 'Zapatillas doradas', level: 6 },
+  'bag:capa': { name: 'Capa', level: 8 },
+};
+const free = (field, list) => list.filter(v => !PREMIUM[field + ':' + v]);
 const COLORS = {
   skin: ['#FBE0CB', '#F1C8A5', '#E2AE85', '#C98E62', '#A06840', '#7A4A2C', '#523018'],
   eyes: ['#3B2A1E', '#5A7D3A', '#3D6FB3', '#7A5230', '#2B2B30', '#7E8C99'],
@@ -42,14 +52,14 @@ const BASE = {
 const pick = list => list[Math.floor(Math.random() * list.length)];
 const chance = p => Math.random() < p;
 function randomLook() {
-  const top = pick(Object.keys(STYLES.top));
+  const top = pick(free('top', Object.keys(STYLES.top)));
   return Object.assign({}, BASE, {
     skin: pick(COLORS.skin), eyes: pick(COLORS.eyes), freckles: chance(0.25), blush: chance(0.3), beard: chance(0.15) ? pick(['bigote', 'barba']) : 'no', earrings: chance(0.3),
-    hair: pick(COLORS.hair), hair2: chance(0.2) ? pick(COLORS.hair) : null, hairStyle: pick(Object.keys(STYLES.hairStyle)), bangs: chance(0.4), braids: chance(0.15),
+    hair: pick(COLORS.hair), hair2: chance(0.2) ? pick(COLORS.hair) : null, hairStyle: pick(free('hairStyle', Object.keys(STYLES.hairStyle))), bangs: chance(0.4), braids: chance(0.15),
     glasses: chance(0.3) ? pick(['finas', 'pasta', 'sol']) : 'no', head: chance(0.35) ? pick(['gorra', 'gorro', 'bucket', 'bandana', 'horquillas']) : 'no', headColor: pick(COLORS.head),
     top, topColor: pick(COLORS.cloth), top2: pick(COLORS.cloth), pattern: chance(0.35) ? pick(['rayas', 'cuadros', 'franja']) : 'liso', stripe: pick(COLORS.cloth),
-    bottom: pick(Object.keys(STYLES.bottom)), bottomColor: pick(COLORS.bottom), legs: chance(0.3) ? pick(['medias', 'rejilla', 'rayas']) : 'piel', legsColor: pick(COLORS.legs),
-    shoes: pick(Object.keys(STYLES.shoes)), shoesColor: pick(COLORS.shoes), bag: chance(0.4) ? pick(['bolso', 'mochila', 'rinonera']) : 'no', bagColor: pick(COLORS.cloth),
+    bottom: pick(free('bottom', Object.keys(STYLES.bottom))), bottomColor: pick(COLORS.bottom), legs: chance(0.3) ? pick(['medias', 'rejilla', 'rayas']) : 'piel', legsColor: pick(COLORS.legs),
+    shoes: pick(free('shoes', Object.keys(STYLES.shoes))), shoesColor: pick(COLORS.shoes), bag: chance(0.4) ? pick(['bolso', 'mochila', 'rinonera']) : 'no', bagColor: pick(COLORS.cloth),
     chain: chance(0.2), necklace: chance(0.2),
   });
 }
@@ -108,6 +118,7 @@ function paint(input, { items = [], closed = false } = {}) {
     if (L.pattern === 'rayas') return (y % 4 < 2) ? stripe : base;
     if (L.pattern === 'cuadros') return (x % 4 === 0 || y % 4 === 0) ? mix(base, stripe, 0.75) : base;
     if (L.pattern === 'franja') return (y >= 40 && y <= 43) ? stripe : base;
+    if (L.pattern === 'llamas') { const crest = 45 - [0, 3, 1, 4, 2, 0, 3, 5, 1][x % 9]; if (y >= crest + 4) return tint(stripe, 0.35); if (y >= crest) return stripe; return base; }
     return base;
   };
   const topAt = (x, y) => pat(top1, x, y);
@@ -124,6 +135,7 @@ function paint(input, { items = [], closed = false } = {}) {
   };
   (backHair[L.hairStyle] || (() => {}))();
   if (L.top === 'sudadera') rect(14, 29, 29, 33, mul(top1, 0.72)); // capucha por detrás
+  if (L.bag === 'capa') { for (let y = 31; y <= 66; y++) { const t = (y - 31) / 35; row(y, Math.round(9 - 5 * t), Math.round(34 + 5 * t), (x) => (x % 5 === 0 ? mul(bag, 0.8) : bag)); } row(66, 4, 39, mul(bag, 0.7)); }
 
   // ===== 2. Skate (detrás de la mano derecha) =====
   if (has('skate')) {
@@ -163,6 +175,7 @@ function paint(input, { items = [], closed = false } = {}) {
     altas: () => feet.forEach(([a, b]) => { rect(a + 2, 69, b - 1, 73, shoe); rect(a, 74, b, 77, shoe); row(78, a, b, sole); set(a === 11 ? a + 3 : b - 3, 71, WHITE); set(a === 11 ? a + 3 : b - 3, 72, WHITE); row(73, a + 2, b - 1, shoeS); }),
     botas: () => feet.forEach(([a, b]) => { rect(a + 2, 67, b - 1, 74, shoe); rect(a, 74, b, 77, shoe); rect(a, 78, b, 79, DARK); dots([[a + 4, 69], [a + 5, 71], [a + 4, 73]], shoeS); }),
     plataformas: () => feet.forEach(([a, b]) => { rect(a, 73, b, 75, shoe); rect(a, 76, b, 79, sole); row(76, a, b, mul(sole, 0.85)); }),
+    doradas: () => feet.forEach(([a, b]) => { rect(a + 1, 72, b - 1, 73, GOLD); rect(a, 74, b, 77, GOLD); row(78, a, b, mul(GOLD, 0.7)); dots([[a + 2, 75], [b - 2, 74]], tint(GOLD, 0.6)); set(a + 4, 71, WHITE); }),
   }[L.shoes] || (() => {}))();
 
   // ===== 4. Torso, brazos y manos =====
@@ -189,12 +202,14 @@ function paint(input, { items = [], closed = false } = {}) {
   }[L.top] || (() => {}))();
   // manos
   rect(6, 51, 9, 53, skin); row(53, 6, 9, skinS); rect(34, 51, 37, 53, skin); row(53, 34, 37, skinS);
+  if (L.bag === 'capa') { set(17, 33, GOLD); set(26, 33, GOLD); }
   if (L.necklace) { dots([[18, 33], [19, 34], [20, 34], [21, 35], [22, 35], [23, 34], [24, 34], [25, 33]], GOLD); set(21, 36, GOLD); set(22, 36, GOLD); }
 
   // ===== 5. Accesorios del cuerpo =====
   ({
     bolso: () => { for (let i = 0; i <= 20; i++) set(31 - Math.round(i * 0.85), 33 + i, DARK); rect(7, 50, 15, 57, bag); row(50, 7, 15, mul(bag, 0.75)); rect(7, 51, 15, 52, mul(bag, 0.75)); set(11, 53, METAL); },
     mochila: () => { rect(14, 33, 15, 47, DARK); rect(28, 33, 29, 47, DARK); dots([[14, 41], [15, 41], [28, 41], [29, 41]], METAL); },
+    capa: () => {},
     rinonera: () => { row(50, 11, 32, DARK); rect(16, 49, 28, 54, bag); row(51, 17, 27, mul(bag, 0.7)); set(27, 51, METAL); },
   }[L.bag] || (() => {}))();
   if (L.chain) { for (let i = 0; i <= 6; i++) set(26 + Math.round(i / 2), 55 + i, i % 2 ? METAL : GREY); for (let i = 0; i <= 5; i++) set(30 - Math.round(i / 3), 61 - i, i % 2 ? METAL : GREY); }
@@ -243,7 +258,15 @@ function paint(input, { items = [], closed = false } = {}) {
 
   // ===== 8. Gafas y cabeza =====
   const frame = L.glasses === 'finas' ? [92, 82, 70] : K;
-  if (L.glasses !== 'no') {
+  if (L.glasses === 'estrella') {
+    const pink = [233, 127, 176];
+    const star = ['...#...', '..###..', '#######', '.#####.', '..###..', '.##.##.', '.#...#.'];
+    for (const x0 of [13, 24]) {
+      star.forEach((line, dy) => [...line].forEach((ch, dx) => { if (ch === '#') set(x0 + dx, 17 + dy, pink); }));
+      rect(x0 + 2, 19, x0 + 4, 21, [70, 30, 70]); set(x0 + 2, 19, WHITE);
+    }
+    row(20, 20, 23, pink);
+  } else if (L.glasses !== 'no') {
     for (const x0 of [14, 24]) {
       if (L.glasses === 'sol') rect(x0, 19, x0 + 5, 23, [34, 34, 40]);
       row(19, x0 + (L.glasses === 'finas' ? 1 : 0), x0 + (L.glasses === 'finas' ? 4 : 5), frame); row(23, x0 + 1, x0 + 4, frame);
@@ -259,6 +282,8 @@ function paint(input, { items = [], closed = false } = {}) {
     bucket: () => { row(6, 16, 27, headC); rect(14, 7, 29, 11, headC); row(8, 14, 29, headS); row(12, 11, 32, headS); row(13, 10, 33, headC); row(14, 10, 12, headC); row(14, 31, 33, headC); },
     bandana: () => { rect(13, 12, 30, 13, headC); dots([[15, 12], [19, 13], [24, 12], [28, 13]], headL); rect(31, 13, 33, 14, headC); set(32, 15, headS); set(33, 16, headS); },
     horquillas: () => { dots([[16, 13], [17, 12], [18, 13], [26, 12], [27, 13]], headC); },
+    gato: () => { row(5, 15, 28, headC); rect(13, 6, 30, 10, headC); rect(13, 11, 30, 13, (x) => (x % 2 ? headS : headC)); for (const x0 of [13, 26]) { row(4, x0, x0 + 4, headC); row(3, x0 + (x0 === 13 ? 0 : 1), x0 + (x0 === 13 ? 3 : 4), headC); row(2, x0 + (x0 === 13 ? 0 : 2), x0 + (x0 === 13 ? 2 : 4), headC); set(x0 === 13 ? 14 : 29, 3, [240, 150, 170]); } dots([[18, 8], [25, 8]], DARK); row(10, 20, 23, headS); },
+    corona: () => { rect(14, 7, 29, 11, GOLD); row(12, 13, 30, mul(GOLD, 0.7)); for (const x of [14, 18, 21, 25, 29]) { set(x, 6, GOLD); set(x, 5, GOLD); } set(21, 4, GOLD); set(22, 4, GOLD); rect(21, 8, 22, 10, RED); dots([[16, 9], [27, 9]], [80, 160, 255]); row(7, 15, 28, tint(GOLD, 0.35)); },
   }[L.head] || (() => {}))();
 
   // ===== Contorno de 1 px =====
@@ -292,5 +317,5 @@ function face(look) {
   return cache.get(key);
 }
 
-window.Character = { BASE, STYLES, COLORS, randomLook, upgrade, image, face, W, H };
+window.Character = { BASE, STYLES, COLORS, PREMIUM, randomLook, upgrade, image, face, W, H };
 })();
