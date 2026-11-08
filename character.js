@@ -83,10 +83,15 @@ const tint = (c, f) => c.map(v => Math.round(v + (255 - v) * f));
 const mix = (a, b, t) => a.map((v, i) => Math.round(v * (1 - t) + b[i] * t));
 const K = [17, 17, 17], WHITE = [246, 246, 246], METAL = [181, 181, 186], GOLD = [232, 182, 52], RED = [229, 72, 60], DARK = [28, 28, 32], GREY = [120, 120, 126];
 
-function paint(input, { items = [], closed = false } = {}) {
+function paint(input, { items = [], closed = false, mood = 'idle' } = {}) {
+  if (mood === 'tired') closed = true;
   const L = upgrade(input);
   const px = new Uint8ClampedArray(W * H * 4);
-  const set = (x, y, c) => { if (x < 0 || y < 0 || x >= W || y >= H || !c) return; const i = (y * W + x) * 4; px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = 255; };
+  // Cada píxel recuerda a qué zona pertenece (pelo, cara, brazo…) para sombrear por zonas
+  const zones = new Uint8Array(W * H); let zone = 0;
+  const Z = { none: 0, hairB: 1, cape: 2, item: 3, legs: 4, bottom: 5, shoes: 6, armL: 7, armR: 8, torso: 9, hand: 10, neck: 11, face: 12, hairF: 13, head: 14 };
+  const set = (x, y, c) => { if (x < 0 || y < 0 || x >= W || y >= H || !c) return; const i = (y * W + x) * 4; px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = 255; zones[y * W + x] = zone; };
+  const at = name => { zone = Z[name]; };
   const filled = (x, y) => x >= 0 && y >= 0 && x < W && y < H && px[(y * W + x) * 4 + 3] > 0;
   // c puede ser un color o una función (x, y) => color, para estampados
   const rect = (x0, y0, x1, y1, c) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, typeof c === 'function' ? c(x, y) : c); };
@@ -108,6 +113,7 @@ function paint(input, { items = [], closed = false } = {}) {
     const base = y >= tipsFrom ? hairB : hairA;
     if ((y === 10 && x >= 16 && x <= 18) || (y === 11 && x >= 15 && x <= 17)) return tint(base, 0.22); // brillo
     if (curly && noise(x, y) % 6 === 0) return mul(base, 0.8); // textura de rizo
+    if (!curly && y > 15 && x % 4 === 1) return mul(base, 0.9); // mechones
     return base;
   };
   const hairS = (x, y) => mul(hairAt(x, y), 0.78);
@@ -125,6 +131,7 @@ function paint(input, { items = [], closed = false } = {}) {
   const topS = (x, y) => mul(topAt(x, y), 0.84);
 
   // ===== 1. Pelo de detrás =====
+  at('hairB');
   const backHair = {
     melena: () => rect(11, 14, 32, 31, hairS),
     largo: () => { rect(10, 14, 33, 44, hairS); row(45, 11, 32, hairS); row(46, 13, 30, hairS); row(47, 16, 27, hairS); },
@@ -134,10 +141,13 @@ function paint(input, { items = [], closed = false } = {}) {
     trenzas: () => { for (const x0 of [10, 31]) { for (let y = 18; y <= 44; y++) rect(x0, y, x0 + 2, y, (y % 3 === 0) ? hairS(x0, y) : hairAt(x0, y)); row(45, x0, x0 + 2, RED); row(46, x0, x0 + 2, hairAt); set(x0 + 1, 47, hairAt(x0 + 1, 47)); } },
   };
   (backHair[L.hairStyle] || (() => {}))();
+  at('torso');
   if (L.top === 'sudadera') rect(14, 29, 29, 33, mul(top1, 0.72)); // capucha por detrás
+  at('cape');
   if (L.bag === 'capa') { for (let y = 31; y <= 66; y++) { const t = (y - 31) / 35; row(y, Math.round(9 - 5 * t), Math.round(34 + 5 * t), (x) => (x % 5 === 0 ? mul(bag, 0.8) : bag)); } row(66, 4, 39, mul(bag, 0.7)); }
 
   // ===== 2. Skate (detrás de la mano derecha) =====
+  at('item');
   if (has('skate')) {
     rect(38, 36, 42, 76, DARK); row(35, 39, 41, DARK); row(77, 39, 41, DARK);
     for (const y of [41, 71]) { rect(37, y, 42, y + 1, [239, 227, 200]); row(y - 1, 38, 41, [196, 196, 200]); }
@@ -151,8 +161,10 @@ function paint(input, { items = [], closed = false } = {}) {
     if (L.legs === 'rayas') return (y % 4 < 2) ? legC : WHITE;
     return (x === 14 || x === 24) ? skinS : skin;
   };
+  at('legs');
   const bare = { corto: 62, falda: 63 }[L.bottom];
   if (bare) { rect(14, bare, 19, 73, legAt); rect(24, bare, 29, 73, legAt); }
+  at('bottom');
   const botS = mul(bot, 0.78), botL = tint(bot, 0.14);
   ({
     cargo: () => {
@@ -166,8 +178,12 @@ function paint(input, { items = [], closed = false } = {}) {
     corto: () => { rect(11, 54, 32, 61, bot); rect(21, 58, 22, 61, botS); row(61, 11, 20, botS); row(61, 23, 32, botS); },
     falda: () => { for (let y = 54; y <= 62; y++) { const t = (y - 54) / 8; row(y, Math.round(12 - 3 * t), Math.round(31 + 3 * t), (x, yy) => ((x - 9) % 4 === 0 && yy > 56) ? botS : bot); } row(62, 9, 34, botS); },
   }[L.bottom] || (() => {}))();
+  // pliegues en las rodillas
+  if (['cargo', 'vaqueros', 'chandal'].includes(L.bottom)) dots([[14, 66], [15, 67], [28, 66], [29, 67], [16, 58], [27, 58]], botS);
+  at('none');
   if (['cargo', 'vaqueros', 'corto', 'falda'].includes(L.bottom)) { row(54, 12, 31, DARK); rect(20, 54, 23, 54, METAL); }
 
+  at('shoes');
   const shoeS = mul(shoe, 0.66), sole = L.shoes === 'botas' ? DARK : (shoe[0] + shoe[1] + shoe[2] > 600 ? [200, 200, 204] : WHITE);
   const feet = [[11, 20], [23, 32]];
   ({
@@ -181,16 +197,15 @@ function paint(input, { items = [], closed = false } = {}) {
   // ===== 4. Torso, brazos y manos =====
   const longSleeves = L.top !== 'camiseta';
   const sleeveAt = L.top === 'capas' ? (x, y) => (y <= 39 ? topAt(x, y) : top2) : topAt;
-  // brazos
-  rect(6, 34, 10, 50, (x, y) => (longSleeves || y <= 40) ? sleeveAt(x, y) : skin);
-  rect(33, 34, 37, 50, (x, y) => (longSleeves || y <= 40) ? sleeveAt(x, y) : skin);
-  rect(10, 35, 10, 50, (x, y) => ((longSleeves || y <= 40) ? mul(sleeveAt(x, y), 0.8) : skinS));
-  rect(33, 35, 33, 50, (x, y) => ((longSleeves || y <= 40) ? mul(sleeveAt(x, y), 0.8) : skinS));
+  // brazos (con pliegue en el codo)
+  const armAt = (x, y) => (longSleeves || y <= 40) ? ((y === 43 && longSleeves && x % 2) ? mul(sleeveAt(x, y), 0.86) : sleeveAt(x, y)) : skin;
+  at('armL'); rect(6, 34, 10, 50, armAt);
+  at('armR'); rect(33, 34, 37, 50, armAt);
   if (L.top === 'sudadera' || L.top === 'jersey') { row(49, 6, 9, topS); row(50, 6, 9, topS); row(49, 34, 37, topS); row(50, 34, 37, topS); }
   // tronco
+  at('torso');
   row(32, 12, 31, topAt); row(33, 10, 33, topAt);
   rect(11, 34, 32, 53, topAt);
-  rect(11, 34, 11, 53, topS); rect(32, 34, 32, 53, topS);
   ({
     camiseta: () => { row(32, 18, 25, skin); row(33, 17, 26, topS); row(53, 11, 32, topS); },
     sudadera: () => { row(32, 17, 26, mul(top1, 0.72)); dots([[19, 34], [19, 35], [19, 36], [19, 37], [24, 34], [24, 35], [24, 36], [24, 37]], tint(top1, 0.5));
@@ -201,7 +216,8 @@ function paint(input, { items = [], closed = false } = {}) {
     chaqueta: () => { rect(19, 32, 24, 53, top2); rect(21, 34, 22, 53, METAL); dots([[17, 32], [18, 33], [26, 32], [25, 33]], topS); rect(18, 34, 18, 53, topS); rect(25, 34, 25, 53, topS); row(32, 20, 23, skin); row(53, 11, 32, topS); },
   }[L.top] || (() => {}))();
   // manos
-  rect(6, 51, 9, 53, skin); row(53, 6, 9, skinS); rect(34, 51, 37, 53, skin); row(53, 34, 37, skinS);
+  at('hand'); rect(6, 51, 9, 53, skin); row(53, 6, 9, skinS); rect(34, 51, 37, 53, skin); row(53, 34, 37, skinS);
+  at('none');
   if (L.bag === 'capa') { set(17, 33, GOLD); set(26, 33, GOLD); }
   if (L.necklace) { dots([[18, 33], [19, 34], [20, 34], [21, 35], [22, 35], [23, 34], [24, 34], [25, 33]], GOLD); set(21, 36, GOLD); set(22, 36, GOLD); }
 
@@ -217,18 +233,33 @@ function paint(input, { items = [], closed = false } = {}) {
   if (has('handycam')) { rect(1, 47, 8, 53, DARK); rect(2, 48, 6, 48, GREY); dots([[1, 49], [1, 50]], METAL); rect(5, 45, 8, 46, DARK); set(3, 51, RED); rect(6, 51, 8, 53, skin); }
 
   // ===== 6. Cuello, orejas y cara =====
-  rect(19, 30, 24, 31, skinS);
+  at('neck'); rect(19, 30, 24, 31, skinS);
+  at('face');
   for (const [y, a, b] of [[12, 15, 28], [13, 14, 29], [27, 14, 29], [28, 15, 28], [29, 17, 26]]) row(y, a, b, skin);
   rect(13, 14, 30, 26, skin);
   rect(12, 19, 12, 23, skin); rect(31, 19, 31, 23, skin); set(12, 21, skinS); set(31, 21, skinS);
+  at('none');
   if (has('auriculares')) { row(33, 16, 27, DARK); rect(13, 29, 16, 33, DARK); rect(27, 29, 30, 33, DARK); rect(14, 30, 15, 32, GREY); rect(28, 30, 29, 32, GREY); set(14, 31, RED); set(29, 31, RED); }
   // ojos
-  const eye = rgb(L.eyes);
-  if (closed) { row(21, 15, 18, K); row(21, 25, 28, K); }
-  else { rect(16, 20, 17, 22, eye); rect(26, 20, 27, 22, eye); set(16, 20, WHITE); set(26, 20, WHITE); row(22, 16, 17, mul(eye, 0.6)); row(22, 26, 27, mul(eye, 0.6)); }
+  at('face');
+  const eye = rgb(L.eyes), lid = mix(mul(hairA, 0.6), K, 0.5), lip = mix(skinD, [150, 60, 60], 0.35), sclera = tint(skin, 0.75);
+  if (closed) {
+    for (const [a, b] of [[15, 18], [25, 28]]) { set(a, 21, lid); set(b, 21, lid); row(22, a + 1, b - 1, lid); }
+  } else {
+    for (const [l, r, outer] of [[16, 17, 15], [26, 27, 28]]) {
+      row(20, Math.min(l, outer), Math.max(r, outer), lid);   // párpado con pestaña
+      rect(l, 21, r, 22, eye); set(r, 21, WHITE);            // iris con brillo
+      set(outer, 21, sclera); set(l, 22, mul(eye, 0.65));
+    }
+  }
   row(18, 15, 18, brow); row(18, 25, 28, brow);
-  dots([[21, 24], [22, 24]], skinS);
-  row(26, 20, 23, mix(skinD, [150, 60, 60], 0.35));
+  if (mood === 'tired') { set(15, 17, brow); set(28, 17, brow); }
+  dots([[21, 24], [22, 24]], skinS); set(22, 23, tint(skin, 0.25));
+  // boca según el ánimo
+  if (mood === 'fire') { row(26, 19, 24, mul(lip, 0.45)); row(26, 20, 23, WHITE); row(27, 20, 23, mix(lip, [220, 90, 100], 0.4)); }
+  else if (mood === 'happy' || mood === 'proud') { row(26, 20, 23, lip); set(19, 25, lip); set(24, 25, lip); }
+  else if (mood === 'tired') row(26, 20, 22, lip);
+  else row(26, 20, 23, lip);
   if (L.blush) dots([[14, 24], [15, 24], [28, 24], [29, 24]], mix(skin, [240, 110, 120], 0.45));
   if (L.freckles) dots([[15, 23], [17, 24], [16, 25], [26, 24], [28, 23], [27, 25]], mix(skinD, [150, 80, 40], 0.3));
   if (L.beard === 'bigote') row(25, 19, 24, brow);
@@ -236,6 +267,7 @@ function paint(input, { items = [], closed = false } = {}) {
   if (L.earrings) { set(12, 24, GOLD); set(31, 24, GOLD); set(12, 25, GOLD); set(31, 25, GOLD); }
 
   // ===== 7. Pelo de delante =====
+  at('hairF');
   const top = (rows) => rows.forEach(([y, a, b]) => row(y, a, b, hairAt));
   const capTop = () => top([[9, 16, 27], [10, 14, 29], [11, 13, 30], [12, 13, 30], [13, 13, 30]]);
   ({
@@ -257,6 +289,7 @@ function paint(input, { items = [], closed = false } = {}) {
   if (L.braids) for (let y = 15; y <= 30; y++) { const c = y % 2 ? hairAt(14, y) : hairS(14, y); set(14, y, c); set(29, y, c); if (y === 30) { set(14, 31, RED); set(29, 31, RED); } }
 
   // ===== 8. Gafas y cabeza =====
+  at('none');
   const frame = L.glasses === 'finas' ? [92, 82, 70] : K;
   if (L.glasses === 'estrella') {
     const pink = [233, 127, 176];
@@ -275,6 +308,7 @@ function paint(input, { items = [], closed = false } = {}) {
     }
     row(20, 20, 23, frame); set(13, 20, frame); set(30, 20, frame);
   }
+  at('head');
   const headS = mul(headC, 0.72), headL = tint(headC, 0.18);
   ({
     gorra: () => { row(6, 16, 27, headC); row(7, 14, 29, headC); rect(13, 8, 30, 11, headC); rect(15, 7, 18, 8, headL); row(12, 10, 31, headS); row(13, 11, 30, headS); },
@@ -286,11 +320,29 @@ function paint(input, { items = [], closed = false } = {}) {
     corona: () => { rect(14, 7, 29, 11, GOLD); row(12, 13, 30, mul(GOLD, 0.7)); for (const x of [14, 18, 21, 25, 29]) { set(x, 6, GOLD); set(x, 5, GOLD); } set(21, 4, GOLD); set(22, 4, GOLD); rect(21, 8, 22, 10, RED); dots([[16, 9], [27, 9]], [80, 160, 255]); row(7, 15, 28, tint(GOLD, 0.35)); },
   }[L.head] || (() => {}))();
 
-  // ===== Contorno de 1 px =====
-  const out = new Uint8ClampedArray(px);
+  // ===== Volumen: luz desde arriba a la izquierda, sombra abajo a la derecha, por zonas =====
+  const lit = new Uint8ClampedArray(px);
+  const zoneAt = (x, y) => (filled(x, y) ? zones[y * W + x] : -1);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const z = zoneAt(x, y);
+    if (z <= 0 || z === Z.item) continue;
+    const edge = (dx, dy) => zoneAt(x + dx, y + dy) !== z;
+    let f = 1;
+    if (edge(1, 0)) f *= 0.84; if (edge(0, 1)) f *= 0.88;
+    if (edge(-1, 0)) f *= 1.1; if (edge(0, -1)) f *= 1.08;
+    if (f === 1) continue;
+    const i = (y * W + x) * 4, c = [px[i], px[i + 1], px[i + 2]];
+    const v = f < 1 ? mul(c, f) : tint(c, (f - 1) * 1.1);
+    lit[i] = v[0]; lit[i + 1] = v[1]; lit[i + 2] = v[2];
+  }
+  // ===== Contorno de 1 px del color de lo que rodea, oscurecido =====
+  const out = new Uint8ClampedArray(lit);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     if (filled(x, y)) continue;
-    if (filled(x + 1, y) || filled(x - 1, y) || filled(x, y + 1) || filled(x, y - 1)) { const i = (y * W + x) * 4; out[i] = 17; out[i + 1] = 17; out[i + 2] = 17; out[i + 3] = 255; }
+    const n = [[0, 1], [0, -1], [1, 0], [-1, 0]].find(([dx, dy]) => filled(x + dx, y + dy));
+    if (!n) continue;
+    const j = ((y + n[1]) * W + x + n[0]) * 4, c = mix(mul([lit[j], lit[j + 1], lit[j + 2]], 0.32), K, 0.45), i = (y * W + x) * 4;
+    out[i] = c[0]; out[i + 1] = c[1]; out[i + 2] = c[2]; out[i + 3] = 255;
   }
   return out;
 }
@@ -306,7 +358,7 @@ function toURL(pixels, crop) {
 }
 /** Personaje entero (data URL) con los objetos puestos y los ojos según el ánimo. */
 function image(look, opts = {}) {
-  const key = 'b' + JSON.stringify([look, opts.items || [], !!opts.closed]);
+  const key = 'b' + JSON.stringify([look, opts.items || [], !!opts.closed, opts.mood || 'idle']);
   if (!cache.has(key)) { if (cache.size > 300) cache.clear(); cache.set(key, toURL(paint(look, opts))); }
   return cache.get(key);
 }

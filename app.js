@@ -530,7 +530,7 @@ async function showNextNudge() {
   const el = document.createElement('div');
   el.className = 'lvlup nudge-pop';
   el.innerHTML = html`<div style="background:${colorHex(from.color)};color:${inkFor(colorHex(from.color))}"><span class="pill">${GLYPH.star}¡Te dan caña!</span>
-    ${from.look ? `<img class="nudge-char" src="${Character.image(from.look, { items: from.look.items || [] })}" alt="">` : ''}
+    ${from.look ? `<img class="nudge-char" src="${Character.image(from.look, { items: from.look.items || [], mood: 'fire' })}" alt="">` : ''}
     <h2>${esc(from.name)} te dice: ¡vamos!</h2><p class="hint" style="color:inherit">Haz una misión hoy y no te quedes atrás.</p>
     <button class="btn dark wide">¡Voy!</button></div>`;
   el.addEventListener('click', async () => {
@@ -562,7 +562,7 @@ function maybeShowRecap() {
   const el = document.createElement('div');
   el.className = 'lvlup recap-pop';
   el.innerHTML = html`<div><span class="pill">${GLYPH.trophy}Semana terminada</span><h2>${won ? '¡Has ganado la semana!' : `Ganó ${esc(rows[0].name)}`}</h2>
-    <div class="mini-podium">${order.map(i => `<div class="mp mp${i + 1}"><img src="${Character.image(top[i].look || Character.BASE, { items: (top[i].look && top[i].look.items) || [] })}" alt=""><span class="mp-block"><b>${i + 1}</b><small class="num">${top[i].last_xp} XP</small></span><span class="mp-name">${esc(top[i].name)}</span></div>`).join('')}</div>
+    <div class="mini-podium">${order.map(i => `<div class="mp mp${i + 1}"><img src="${Character.image(top[i].look || Character.BASE, { items: (top[i].look && top[i].look.items) || [], mood: i === 0 ? 'fire' : 'happy' })}" alt=""><span class="mp-block"><b>${i + 1}</b><small class="num">${top[i].last_xp} XP</small></span><span class="mp-name">${esc(top[i].name)}</span></div>`).join('')}</div>
     <p class="hint on-lilac">${pos < 0 ? 'La semana pasada no sumaste XP. Esta semana empieza de cero para todos.' : won ? 'Ya puedes ponerte la corona en tu perfil.' : `Quedaste ${pos + 1}º de ${rows.length}. Esta semana empieza de cero.`}</p>
     <button class="btn dark wide">${won ? 'Ponerme la corona' : 'A por esta semana'}</button></div>`;
   el.addEventListener('click', () => { el.remove(); if (won) { ui.view = 'profile'; ui.lookTab = 'extras'; render(); window.scrollTo(0, 0); } });
@@ -692,7 +692,7 @@ function viewAccount() {
     <p class="hint">¿Primera vez? Pon tu email y una contraseña nueva y dale a Crear cuenta. Si ya tienes, dale a Entrar.</p></section>`;
 }
 function viewAxis(state, look = S.look) {
-  const src = Character.image(look, { items: wearing(), closed: state === 'tired' });
+  const src = Character.image(look, { items: wearing(), mood: state });
   return `<div class="char mood-${state}" aria-hidden="true"><img src="${src}" alt="">${state === 'tired' ? '<span class="zzz">z<b>z</b></span>' : ''}</div>`;
 }
 const heroStyle = () => { const bg = colorHex(S.color), ink = inkFor(bg); return `style="--hero-bg:${bg};--hero-ink:${ink}" data-ink="${ink === '#111111' ? 'dark' : 'light'}"`; };
@@ -814,7 +814,7 @@ function playerMood(r) {
   if (r.streak >= 1) return 'happy';
   return r.xp > 0 ? 'tired' : 'idle';
 }
-const playerImage = r => Character.image(r.look || Character.BASE, { items: (r.look && r.look.items) || [], closed: playerMood(r) === 'tired' });
+const playerImage = r => Character.image(r.look || Character.BASE, { items: (r.look && r.look.items) || [], mood: playerMood(r) });
 const MOOD_TEXT = { fire: 'En racha', happy: 'Activo', proud: 'Cofre abierto', tired: 'Lleva días parado', idle: 'Recién llegado' };
 /** La plaza: todos los personajes, los tres primeros en el podio y quien está parado, en el banco. */
 function viewPlaza(rows) {
