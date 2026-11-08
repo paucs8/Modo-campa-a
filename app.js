@@ -62,7 +62,7 @@ const EXERCISE_KINDS = {
   min: 'Minutos',
   run: 'Carrera (km + min)',
 };
-const STORAGE = { state: 'modo-campana', draft: 'modo-campana-draft' };
+const STORAGE = { state: 'modo-campana', draft: 'modo-campana-draft', pending: 'modo-campana-import' };
 const SYNC_LABEL = {
   cloud: 'Sincronizado', saving: 'Guardando…', error: 'Sin conexión: se subirá al volver',
   signedout: 'Sin sincronizar: toca para entrar', off: 'Solo en este dispositivo', local: 'Solo en este dispositivo',
@@ -327,11 +327,30 @@ function listenRemote() {
     })
     .subscribe();
 }
-async function startSync(user) {
+/** Al entrar con la cuenta: junta lo de este dispositivo con lo de la nube, sin perder nada. */
+async function mergeWithCloud() {
+  const { data, error } = await cloud.client.from('saves').select('state').eq('user_id', cloud.user.id).maybeSingle();
+  if (error) { setSync('error'); return; }
+  if (data && data.state) { S = mergeProgress(migrate(data.state), S); render(); }
+  persist();
+}
+/** Progreso que llegó con un enlace #import=…: se junta en cuanto hay sesión (o al momento, sin nube). */
+async function applyPendingImport() {
+  const code = storage.get(STORAGE.pending);
+  if (!code) return;
+  let incoming;
+  try { incoming = await decodeProgress(code); } catch (e) { incoming = null; }
+  storage.set(STORAGE.pending, null);
+  if (!incoming || !Array.isArray(incoming.campaigns)) { toast('El enlace de progreso no es válido'); return; }
+  update(s => mergeProgress(s, incoming));
+  toast('Progreso importado y sincronizado');
+}
+async function startSync(user, { fresh = false } = {}) {
   cloud.user = user;
   ui.account = false;
   render();
-  await pull();
+  if (fresh) await mergeWithCloud(); else await pull();
+  await applyPendingImport();
   listenRemote();
 }
 function stopSync() {
@@ -340,12 +359,13 @@ function stopSync() {
   setSync('signedout');
 }
 async function initCloud() {
-  if (!CONFIG.supabaseUrl || !CONFIG.supabaseKey || !window.supabase) { setSync('off'); return; }
+  if (!CONFIG.supabaseUrl || !CONFIG.supabaseKey || !window.supabase) { setSync('off'); applyPendingImport(); return; }
   cloud.client = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true } });
   const { data } = await cloud.client.auth.getSession();
-  if (data.session) startSync(data.session.user); else setSync('signedout');
+  if (data.session) startSync(data.session.user);
+  else { setSync('signedout'); if (storage.get(STORAGE.pending)) { ui.account = true; render(); } }
   cloud.client.auth.onAuthStateChange((event, session) => {
-    if (event === 'SIGNED_IN' && session && (!cloud.user || cloud.user.id !== session.user.id)) startSync(session.user);
+    if (event === 'SIGNED_IN' && session && (!cloud.user || cloud.user.id !== session.user.id)) startSync(session.user, { fresh: true });
     if (event === 'SIGNED_OUT') stopSync();
   });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pull(); });
@@ -401,7 +421,8 @@ function viewAccountBody() {
       <label class="fld"><span>Contraseña</span><input name="password" type="password" autocomplete="current-password" minlength="6" required></label>
       <div class="edit-row"><button class="btn primary">Entrar</button><button type="button" class="btn" data-act="signUp">Crear cuenta</button></div>
     </form>
-    <p class="hint">Usa la misma cuenta en el móvil y en el PC. Al entrar se queda la versión más reciente de tu progreso.</p></section>`;
+    ${when(storage.get(STORAGE.pending), '<p class="sug">Entra con tu cuenta y tu progreso antiguo se junta solo.</p>')}
+    <p class="hint">Usa la misma cuenta en el móvil y en el PC. Al entrar se junta lo de este dispositivo con lo de tu cuenta.</p></section>`;
 }
 function viewHero() {
   const xp = totalXP(), L = levelOf(xp), from = xpForLevel(L), to = xpForLevel(L + 1), p = (xp - from) / (to - from);
@@ -917,6 +938,10 @@ document.addEventListener('keydown', ev => {
   actions[ENTER[ev.target.id]]();
 });
 
+if (location.hash.startsWith('#import=')) {
+  storage.set(STORAGE.pending, decodeURIComponent(location.hash.slice(8)));
+  history.replaceState(null, '', location.pathname + location.search);
+}
 render();
 initCloud();
 })();
