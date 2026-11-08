@@ -500,3 +500,21 @@ textarea{font-size:16px}
 .mp-block b{font-size:18px;line-height:1}
 .mp-block small{font-size:10px;font-weight:600}
 .mp-name{font-size:12px;font-weight:700;margin-top:3px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Buzón de ideas */
+.top{position:relative}
+.idea-badge{position:absolute;left:40px;top:-2px;min-width:20px;height:20px;padding:0 5px;border-radius:99px;background:var(--red,#E5483C);color:#fff;border:2px solid var(--bg,#fff);font-size:11px;font-weight:800;line-height:16px;z-index:2}
+.idea-hero{background:var(--lime,#C5E86C);color:#111}
+.idea-teaser{background:var(--surface);color:var(--ink)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.ideas{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.idea{background:var(--bg);border-radius:18px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.idea p{margin:0;font-size:14px;line-height:1.35;white-space:pre-wrap;overflow-wrap:anywhere}
+.idea-h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.idea-st{font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:99px;background:var(--surface)}
+.st-aceptada .idea-st{background:var(--lime,#C5E86C);color:#111}
+.st-hecha .idea-st{background:#111;color:#fff}
+.st-rechazada{opacity:.6}
+.idea-reply{font-size:13px!important;background:var(--surface);border-radius:12px;padding:6px 10px}
+.idea .edit-row{flex-wrap:wrap}
+.admin-ideas textarea{font-size:13px}

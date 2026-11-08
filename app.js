@@ -195,7 +195,7 @@ const ui = {
   addingCampaign: false, newIcon: 'star', newColor: 'pink',
   draft: storage.get(STORAGE.draft), sync: 'local', exForm: null, account: false,
   addingReward: false, bossHit: null,
-  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false }, profileExtras: true, prevCols: true, lookTab: 'cara', playerId: null, nudgeQueue: [],
+  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false }, profileExtras: true, prevCols: true, lookTab: 'cara', playerId: null, nudgeQueue: [], ideas: null, ideasState: 'idle', isAdmin: false, ideaKind: 'campana',
 };
 
 /* =========================================================
@@ -506,6 +506,30 @@ function listenRanking() {
     .subscribe();
 }
 /* ---------- Darse caña: un aviso de ánimo entre amigos ---------- */
+// ---------- Buzón de ideas: los jugadores sugieren y quien lleva la app decide ----------
+const IDEA_KINDS = { campana: 'Campaña nueva', ejercicio: 'Ejercicio o deporte', funcion: 'Algo de la app', otro: 'Otra cosa' };
+const IDEA_STATUS = { pendiente: 'Pendiente', aceptada: 'Aceptada', rechazada: 'Descartada', hecha: 'Ya está en la app' };
+async function loadIdeas() {
+  if (!cloud.user) return;
+  ui.ideasState = 'loading';
+  const [list, admin] = await Promise.all([
+    cloud.client.from('suggestions').select('id,user_id,name,kind,text,status,reply,created_at').order('created_at', { ascending: false }).limit(150),
+    cloud.client.rpc('is_admin'),
+  ]);
+  if (list.error) { ui.ideasState = /does not exist|schema cache|relation/i.test(list.error.message || '') ? 'missing' : 'error'; ui.ideas = []; }
+  else { ui.ideas = list.data || []; ui.ideasState = 'ok'; }
+  ui.isAdmin = !admin.error && admin.data === true;
+  render();
+}
+const pendingIdeas = () => (ui.isAdmin && ui.ideas ? ui.ideas.filter(i => i.status === 'pendiente').length : 0);
+/** Texto listo para pegar en el chat con Claude con todo lo aceptado y aún sin hacer. */
+function ideasForClaude() {
+  const list = (ui.ideas || []).filter(i => i.status === 'aceptada');
+  if (!list.length) return '';
+  return 'Sugerencias aceptadas del buzón de Modo Campaña. Impleméntalas en la app:\n\n'
+    + list.map((i, k) => `${k + 1}. [${IDEA_KINDS[i.kind] || i.kind}] ${i.text.trim()} (de ${i.name || 'alguien'}${i.reply ? `; nota mía: ${i.reply.trim()}` : ''})`).join('\n')
+    + '\n\nCuando estén, márcalas como hechas en el buzón.';
+}
 async function loadNudges() {
   if (!cloud.user) return;
   const { data, error } = await cloud.client.from('nudges').select('id,from_id,created_at').eq('to_id', cloud.user.id).eq('seen', false).limit(20);
@@ -620,6 +644,7 @@ async function startSync(user, { fresh = false } = {}) {
   publishProfile();
   loadRanking();
   loadNudges();
+  loadIdeas();
 }
 function stopSync() {
   if (cloud.channel) cloud.client.removeChannel(cloud.channel);
@@ -671,7 +696,7 @@ const bar = (p, cls = 'bar') => `<div class="${cls}"><i style="width:${p * 100}%
 
 function viewTop() {
   const d = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' });
-  return html`<header class="top"><button class="avatar" data-act="open" data-id="profile" aria-label="Tu perfil"><img src="${S.photo || Character.face(S.look)}" alt="" class="${S.photo ? 'photo' : ''}"></button>
+  return html`<header class="top"><button class="avatar" data-act="open" data-id="profile" aria-label="Tu perfil"><img src="${S.photo || Character.face(S.look)}" alt="" class="${S.photo ? 'photo' : ''}"></button>${pendingIdeas() ? `<button class="idea-badge num" data-act="open" data-id="ideas" aria-label="${pendingIdeas()} ideas nuevas en el buzón">${pendingIdeas()}</button>` : ''}
     <div class="hello"><b>Hola, ${esc(S.name)}</b><span>${esc(d[0].toUpperCase() + d.slice(1))}</span></div>
     <button class="sync" id="sync" data-s="${ui.sync}" title="${SYNC_LABEL[ui.sync]}" aria-label="${SYNC_LABEL[ui.sync]}" data-act="syncInfo"><i></i></button></header>`;
 }
@@ -790,12 +815,43 @@ function viewProfile() {
       <div class="look-editor"><div class="look-preview" style="background:${colorHex(S.color)}">${viewAxis('happy')}</div>
         <div class="look-controls">${viewLookControls(L)}</div></div>
       <p class="hint">Lo que desbloqueas en el inventario (cascos, llavero, handycam, skate) se lo pone tu personaje.</p></section>
+    <button class="teaser idea-teaser" data-act="open" data-id="ideas"><span class="teaser-ico">${GLYPH.star || '+'}</span><span class="txt"><b>Buzón de ideas</b><small>¿Echas algo en falta? Una campaña, un deporte, algo de la app…</small></span><span class="go">${GLYPH.chev}</span></button>
     <section class="panel"><h3>Cuenta</h3>
       ${cloud.user ? html`<p class="hint">Conectado como <b>${esc(cloud.user.email || '')}</b>. ${SYNC_LABEL[ui.sync]}.</p>
         <div class="edit-row"><button class="btn danger" data-act="signOut">Cerrar sesión</button></div>
         ${when(!ui.profileExtras, '<p class="hint">Para que los demás vean tu foto y tu personaje en el ranking, falta ejecutar <b>supabase-perfil.sql</b> en Supabase.</p>')}`
         : ui.sync === 'off' ? '<p class="hint">Sin conexión con Supabase: todo se guarda en este dispositivo.</p>'
         : '<p class="hint">Crea una cuenta para guardar tu progreso, usarlo en varios dispositivos y salir en el ranking.</p><button class="btn primary" data-act="syncInfo">Crear cuenta o entrar</button>'}</section>`;
+}
+function viewIdeas() {
+  const kinds = Object.entries(IDEA_KINDS).map(([k, t]) => `<button type="button" class="chip-btn" data-act="ideaKind" data-k="${k}" aria-pressed="${ui.ideaKind === k}">${t}</button>`).join('');
+  const hero = html`<section class="c-hero idea-hero"><span class="pill">${GLYPH.star || ''}Buzón de ideas</span><h2>¿Qué le falta a la app?</h2>
+    <p>Pide una campaña distinta, un deporte que no sale o cualquier cosa que te motivaría más. ${ui.isAdmin ? 'Tú decides qué entra.' : 'Pau lo revisa y te dice si entra.'}</p></section>`;
+  if (!cloud.user) return hero + '<section class="panel"><p class="hint">Entra con tu cuenta para mandar ideas.</p><button class="btn primary" data-act="syncInfo">Crear cuenta o entrar</button></section>';
+  if (ui.ideasState === 'missing') return hero + '<section class="panel"><p class="hint">El buzón aún no está activado. Hay que ejecutar <b>supabase-sugerencias.sql</b> en Supabase.</p></section>';
+  const list = ui.ideas || [];
+  const forClaude = ui.isAdmin ? ideasForClaude() : '';
+  const admin = ui.isAdmin ? html`<section class="panel admin-ideas"><h3>Para Claude <span class="label">${list.filter(i => i.status === 'aceptada').length} aceptadas</span></h3>
+    ${forClaude ? `<p class="hint">Copia esto y pégalo en el chat con Claude para que lo meta en la app. Luego márcalas como hechas.</p><textarea readonly rows="5" id="for-claude">${esc(forClaude)}</textarea><button class="btn primary" data-act="copyForClaude">Copiar para Claude</button>`
+      : '<p class="hint">Cuando aceptes ideas, aquí te saldrá el texto para pasárselo a Claude.</p>'}</section>` : '';
+  const item = i => {
+    const mine = i.user_id === cloud.user.id, when_ = new Date(i.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+    const actions = ui.isAdmin
+      ? `<div class="edit-row">${['aceptada', 'rechazada', 'hecha'].filter(st => st !== i.status).map(st => `<button class="btn ${st === 'aceptada' ? 'primary' : st === 'rechazada' ? 'danger' : ''}" data-act="setIdea" data-id="${i.id}" data-k="${st}">${{ aceptada: 'Aceptar', rechazada: 'Descartar', hecha: 'Ya está hecha' }[st]}</button>`).join('')}
+         <button class="btn ghost" data-act="replyIdea" data-id="${i.id}">${i.reply ? 'Cambiar nota' : 'Añadir nota'}</button>${confirmBtn('deleteIdea', 'idea' + i.id, 'Borrar')}</div>`
+      : (mine && i.status === 'pendiente' ? `<div class="edit-row">${confirmBtn('deleteIdea', 'idea' + i.id, 'Borrar')}</div>` : '');
+    return `<li class="idea st-${i.status}"><div class="idea-h"><span class="label">${esc(IDEA_KINDS[i.kind] || i.kind)}</span><span class="idea-st">${IDEA_STATUS[i.status] || i.status}</span></div>
+      <p>${esc(i.text)}</p>${i.reply ? `<p class="idea-reply"><b>Respuesta:</b> ${esc(i.reply)}</p>` : ''}<small class="hint">${mine ? 'Tú' : esc(i.name || 'Alguien')} · ${when_}</small>${actions}</li>`;
+  };
+  return hero + html`<section class="panel"><h3>Mandar una idea</h3>
+    <form class="stack-s" data-form="sendIdea"><div class="chips">${kinds}</div>
+      <textarea name="t" rows="3" maxlength="600" required placeholder="${{ campana: 'Ej: una campaña para aprender a cocinar', ejercicio: 'Ej: que salga baile como ejercicio', funcion: 'Ej: poder poner recordatorios', otro: 'Cuéntalo como quieras' }[ui.ideaKind]}"></textarea>
+      <button class="btn primary">Enviar idea</button></form>
+    ${when(ui.ideaKind === 'ejercicio', '<p class="hint">Truco: en tus rutinas ya puedes añadir cualquier ejercicio con su nombre, por repeticiones, peso o tiempo. Si lo que quieres es otra cosa, cuéntalo aquí.</p>')}
+    ${when(ui.ideaKind === 'campana', '<p class="hint">Truco: ya puedes crear tus propias campañas con sus niveles y misiones desde Inicio. Si quieres una ya montada para todos, pídela aquí.</p>')}</section>`
+    + admin
+    + html`<section class="panel"><h3>Ideas de todos <span class="label">${list.length}</span></h3>
+      ${ui.ideasState === 'loading' && !list.length ? '<p class="hint">Cargando…</p>' : list.length ? `<ul class="ideas">${list.map(item).join('')}</ul>` : '<p class="hint">Todavía no hay ideas. Sé el primero.</p>'}</section>`;
 }
 function viewRankTeaser() {
   if (!cloud.user || ui.rankingState !== 'ok') return '';
@@ -993,7 +1049,7 @@ const KIND_HELP = {
   min: 'Para rondas largas, como la comba. Te pondrá un objetivo un poco por encima de tu mejor marca.',
   run: 'Distancia y tiempo. Para ir a más kilómetros o a mejor ritmo.',
 };
-const COMMON_EXERCISES = ['Flexiones', 'Flexiones diamante', 'Flexiones inclinadas', 'Dominadas', 'Dominadas australianas', 'Fondos en paralelas', 'Fondos en silla', 'Sentadillas sin peso', 'Sentadilla búlgara', 'Zancadas', 'Puente de glúteo', 'Elevación de gemelos', 'Plancha', 'Plancha lateral', 'Abdominales', 'Elevación de piernas', 'Mountain climbers', 'Burpees', 'Jumping jacks', 'Saltar a la comba', 'Correr', 'Bici', 'Sentadilla', 'Peso muerto', 'Peso muerto rumano', 'Press banca', 'Press inclinado', 'Press militar', 'Remo con barra', 'Remo con mancuerna', 'Jalón al pecho', 'Curl de bíceps', 'Curl martillo', 'Extensión de tríceps', 'Elevaciones laterales', 'Prensa de piernas', 'Hip thrust'];
+const COMMON_EXERCISES = ['Flexiones', 'Flexiones diamante', 'Flexiones inclinadas', 'Dominadas', 'Dominadas australianas', 'Fondos en paralelas', 'Fondos en silla', 'Sentadillas sin peso', 'Sentadilla búlgara', 'Zancadas', 'Puente de glúteo', 'Elevación de gemelos', 'Plancha', 'Plancha lateral', 'Abdominales', 'Elevación de piernas', 'Mountain climbers', 'Burpees', 'Jumping jacks', 'Saltar a la comba', 'Correr', 'Bici', 'Sentadilla', 'Peso muerto', 'Peso muerto rumano', 'Press banca', 'Press inclinado', 'Press militar', 'Remo con barra', 'Remo con mancuerna', 'Jalón al pecho', 'Curl de bíceps', 'Curl martillo', 'Extensión de tríceps', 'Elevaciones laterales', 'Prensa de piernas', 'Hip thrust', 'Baile', 'Yoga', 'Pilates', 'Estiramientos', 'Natación', 'Caminar', 'Pádel', 'Fútbol', 'Baloncesto', 'Escalada', 'Patinar', 'Boxeo'];
 
 function viewExerciseForm(r, x, inSession) {
   const kind = x ? x.kind : 'reps';
@@ -1167,7 +1223,7 @@ function viewCampaign(c) {
 
 function render() {
   const campaign = S.campaigns.find(c => c.id === ui.view);
-  if (!campaign && !['shop', 'ranking', 'profile', 'player'].includes(ui.view)) ui.view = 'home';
+  if (!campaign && !['shop', 'ranking', 'profile', 'player', 'ideas'].includes(ui.view)) ui.view = 'home';
   const y = window.scrollY;
   const nav = document.getElementById('nav');
   if (!S.onboarded) {
@@ -1176,7 +1232,7 @@ function render() {
     return;
   }
   nav.hidden = false;
-  const main = campaign ? viewCampaign(campaign) : ui.view === 'shop' ? viewShop() : ui.view === 'ranking' ? viewRanking() : ui.view === 'profile' ? viewProfile() : ui.view === 'player' ? viewPlayer() : viewHome();
+  const main = campaign ? viewCampaign(campaign) : ui.view === 'shop' ? viewShop() : ui.view === 'ranking' ? viewRanking() : ui.view === 'profile' ? viewProfile() : ui.view === 'player' ? viewPlayer() : ui.view === 'ideas' ? viewIdeas() : viewHome();
   document.getElementById('app').innerHTML = viewTop() + viewAccount() + main
     + `<datalist id="ex-list">${COMMON_EXERCISES.map(n => `<option value="${n}">`).join('')}</datalist>`;
   nav.innerHTML = viewNav();
@@ -1254,7 +1310,7 @@ const actions = {
     if (error) { toast(authError(error)); return; }
     if (!data.session) toast('Revisa tu correo para confirmar la cuenta y luego dale a Entrar');
   },
-  open: el => { if (el.dataset.id === 'ranking') loadRanking(); ui.view = el.dataset.id; ui.addingCampaign = false; ui.editing = false; ui.exForm = null; ui.addingReward = false; render(); window.scrollTo(0, 0); },
+  open: el => { if (el.dataset.id === 'ranking') loadRanking(); if (el.dataset.id === 'ideas') loadIdeas(); ui.view = el.dataset.id; ui.addingCampaign = false; ui.editing = false; ui.exForm = null; ui.addingReward = false; render(); window.scrollTo(0, 0); },
   toggleEditing: repaint(() => { ui.editing = !ui.editing; }),
   toggleLevel: el => { const card = el.closest('.lv-card'); ui.open[el.dataset.k] = card.dataset.open !== '1'; render(); },
 
@@ -1291,6 +1347,31 @@ const actions = {
     update(s => { s.nudgesSent[to] = today(); }, { reward: false });
     const r = (ui.ranking || []).find(x => x.user_id === to);
     toast(`Le has dado caña a ${r ? r.name : 'tu amigo'}`);
+  },
+  ideaKind: el => { ui.ideaKind = el.dataset.k; render(); },
+  setIdea: async el => {
+    const { error } = await cloud.client.from('suggestions').update({ status: el.dataset.k }).eq('id', el.dataset.id);
+    if (error) { toast('No se pudo cambiar'); return; }
+    toast(el.dataset.k === 'aceptada' ? 'Aceptada: ya sale en el texto para Claude' : el.dataset.k === 'hecha' ? 'Marcada como hecha' : 'Descartada');
+    loadIdeas();
+  },
+  replyIdea: async el => {
+    const idea = (ui.ideas || []).find(i => String(i.id) === el.dataset.id);
+    const note = window.prompt('Nota para quien la mandó (se verá debajo de su idea):', idea && idea.reply ? idea.reply : '');
+    if (note === null) return;
+    const { error } = await cloud.client.from('suggestions').update({ reply: note.trim().slice(0, 300) || null }).eq('id', el.dataset.id);
+    if (error) toast('No se pudo guardar'); else loadIdeas();
+  },
+  deleteIdea: async el => {
+    if (ui.armed !== el.dataset.id) { ui.armed = el.dataset.id; render(); return; }
+    ui.armed = null;
+    const { error } = await cloud.client.from('suggestions').delete().eq('id', el.dataset.id.replace('idea', ''));
+    if (error) toast('No se pudo borrar'); else { toast('Idea borrada'); loadIdeas(); }
+  },
+  copyForClaude: async () => {
+    const text = ideasForClaude();
+    try { await navigator.clipboard.writeText(text); toast('Copiado. Pégalo en el chat con Claude'); }
+    catch { const t = document.getElementById('for-claude'); if (t) { t.focus(); t.select(); } toast('Mantén pulsado el texto y copia'); }
   },
   openPlayer: el => { ui.playerId = el.dataset.id; ui.view = 'player'; render(); window.scrollTo(0, 0); },
   shareApp: async () => {
@@ -1493,6 +1574,15 @@ const forms = {
     }, { reward: false });
     ui.view = 'profile'; render(); window.scrollTo(0, 0);
     toast(`¡Bienvenido, ${name}! Ahora hazte tu personaje`);
+  },
+  sendIdea: async (f, F) => {
+    const text = F.t.value.trim();
+    if (text.length < 3 || !cloud.user) return;
+    const btn = f.querySelector('button.primary'); if (btn) btn.disabled = true;
+    const { error } = await cloud.client.from('suggestions').insert({ user_id: cloud.user.id, name: S.name || '', kind: ui.ideaKind, text: text.slice(0, 600) });
+    if (btn) btn.disabled = false;
+    if (error) { toast('No se pudo enviar'); return; }
+    F.t.value = ''; toast('¡Enviada! Te diremos si entra'); loadIdeas();
   },
   saveProfile: (f, F) => {
     const name = F.n.value.trim();
