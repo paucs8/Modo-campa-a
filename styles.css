@@ -4,7 +4,7 @@ body{margin:0;font-size:14px;-webkit-tap-highlight-color:transparent}
 img{max-width:100%}
 [hidden]{display:none!important}
 
-/* Layout: app móvil. Cabecera con avatar, bloques de color grandes y redondeados, barra negra flotante abajo. AXIS como personaje. */
+/* Layout: app móvil. Cabecera con avatar, bloques de color grandes y redondeados, barra negra flotante abajo. Cada jugador con su personaje pixel. */
 :root{
   --bg:#FFFFFF; --surface:#F3F3F1; --surface2:#E9E9E6; --line:#111111; --soft-line:#DADAD6;
   --ink:#111111; --muted:#6E6E69; --on-ink:#FFFFFF;
@@ -61,7 +61,6 @@ h2,h3{text-wrap:balance}
 @keyframes bob{from{transform:translateY(0)}to{transform:translateY(-3px)}}
 @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 .hero-txt{max-width:60%;display:flex;flex-direction:column;gap:10px;position:relative;z-index:1}
-.logo{height:22px;width:auto;align-self:flex-start}
 .pill{display:inline-flex;align-items:center;gap:6px;background:#111;color:#fff;border-radius:999px;padding:4px 12px;font-size:12.5px;font-weight:600;align-self:flex-start}
 .pill svg{width:12px;height:12px}
 .hero h1{margin:0;font-size:34px;line-height:.98;font-weight:800;letter-spacing:-.035em}
@@ -387,7 +386,6 @@ textarea{font:inherit;font-size:13px;border:2px solid var(--soft-line);backgroun
 /* Color propio en la tarjeta */
 .hero .xpbar{background:color-mix(in srgb,currentColor 18%,transparent)}
 .hero .xpbar i{background:currentColor}
-.hero[data-ink="light"] .logo{filter:invert(1)}
 .hero[data-ink="light"] .pill,.c-hero[data-ink="light"] .pill{background:#fff;color:#111}
 .avatar{padding:0;cursor:pointer}
 .avatar img.photo{object-fit:cover;object-position:center;image-rendering:auto}

@@ -5,16 +5,13 @@
    1. Constantes y recursos
    ========================================================= */
 const IMG = {
-  "hero": "assets/hero.png",
-  "face": "assets/face.png",
-  "llavero": "assets/llavero.png",
-  "movil": "assets/movil.png",
-  "auriculares": "assets/auriculares.png",
-  "spray": "assets/spray.png",
-  "mechero": "assets/mechero.png",
-  "handycam": "assets/handycam.png",
-  "skate": "assets/skate.png",
-  "logo": "assets/logo.webp",
+  "llavero": "assets/items/llavero.png",
+  "botella": "assets/items/botella.png",
+  "auriculares": "assets/items/auriculares.png",
+  "movil": "assets/items/movil.png",
+  "mancuerna": "assets/items/mancuerna.png",
+  "handycam": "assets/items/handycam.png",
+  "skate": "assets/items/skate.png",
   "chest": "assets/cofre.png",
   "chestOpen": "assets/cofre-abierto.png",
   "coin": "assets/moneda.png",
@@ -52,10 +49,10 @@ const COLORS = ['lilac', 'orange', 'blue', 'lime', 'pink'];
 const RANKS = ['Novato', 'Aprendiz', 'Explorador', 'Veterano', 'Élite', 'Maestro', 'Leyenda'];
 const ITEMS = [
   { key: 'llavero', name: 'Llavero', level: 2, wearable: true },
-  { key: 'movil', name: 'Móvil', level: 3 },
+  { key: 'botella', name: 'Botella', level: 3 },
   { key: 'auriculares', name: 'Cascos', level: 4, wearable: true },
-  { key: 'spray', name: 'Spray', level: 5 },
-  { key: 'mechero', name: 'Mechero', level: 6 },
+  { key: 'movil', name: 'Móvil', level: 5 },
+  { key: 'mancuerna', name: 'Mancuerna', level: 6 },
   { key: 'handycam', name: 'Handycam', level: 7, wearable: true },
   { key: 'skate', name: 'Skate', level: 8, wearable: true },
   { key: 'chestOpen', name: 'Cofre de oro', level: 10 },
@@ -177,8 +174,9 @@ function migrate(s) {
   // Perfil para el ranking: nombre, color y XP por día (para la liga semanal)
   if (s.onboarded === undefined) s.onboarded = !!s.name;
   s.color = colorHex(s.color); s.xpDays = s.xpDays || {};
-  // Personaje propio: quien ya jugaba antes era AXIS
-  if (!s.look) s.look = s.onboarded ? Object.assign({}, Character.AXIS) : Character.randomLook();
+  // Personaje propio (el antiguo preset fijo pasa a ser un personaje normal para personalizar)
+  if (!s.look || s.look.preset === 'axis') s.look = Character.randomLook();
+  delete s.look.preset; delete s.look.star;
   if (s.photo === undefined) s.photo = null;
   s.v = 5;
   return s;
@@ -260,7 +258,7 @@ function streak() {
   let n = 0; while (set.has(dateKey(d))) { n++; d.setDate(d.getDate() - 1); }
   return n;
 }
-/* ---------- Juego: diarias, cofres, monedas, ánimo de AXIS y jefes ---------- */
+/* ---------- Juego: diarias, cofres, monedas, ánimo del personaje y jefes ---------- */
 const hash = str => [...str].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
 const dayOf = (s, date = today()) => (s.daily[date] = s.daily[date] || {});
 function chestTotals() {
@@ -312,7 +310,7 @@ const chestReady = () => !(S.daily[today()] || {}).chest && dailyQuests().every(
 const coinsSpent = () => S.purchases.reduce((a, p) => a + p.cost, 0);
 const coins = () => Math.max(0, coinsEarned() - coinsSpent());
 
-// Ánimo de AXIS según lo que has hecho estos días
+// Ánimo del personaje según lo que has hecho estos días
 function activeDays() {
   const days = new Set([...S.train, ...S.weight.log.map(p => p.d), ...S.sessions.map(x => x.d)]);
   Object.entries(S.activity).forEach(([d, v]) => { if (Object.values(v).some(n => n > 0)) days.add(d); });
@@ -656,7 +654,7 @@ function viewProfile() {
     <section class="panel"><h3>Tú</h3>
       <form class="inrow" data-form="saveProfile"><input name="n" maxlength="24" required value="${esc(S.name)}" aria-label="Tu nombre"><button class="btn">Guardar nombre</button></form>
       <div class="fld"><span>Tu color: pinta tu tarjeta y tu sitio en el ranking</span>${viewColorPicker(S.color, 'setProfileColor')}</div></section>
-    <section class="panel"><h3>Tu personaje <span class="edit-row"><button class="btn ghost" data-act="lookPreset" data-k="random">Aleatorio</button><button class="btn ghost" data-act="lookPreset" data-k="axis">AXIS</button></span></h3>
+    <section class="panel"><h3>Tu personaje <button class="btn ghost" data-act="randomLook">Aleatorio</button></h3>
       <div class="look-editor"><div class="look-preview" style="background:${colorHex(S.color)}">${viewAxis('happy')}</div>
         <div class="look-controls">
           ${viewLookRow('Piel', 'skin', O.skin, L.skin)}
@@ -667,7 +665,7 @@ function viewProfile() {
           ${viewLookRow('Sudadera', 'top', O.top, L.top, true)}
           ${viewLookRow('Pantalón', 'pants', O.pants, L.pants, true)}
           ${viewLookRow('Zapatillas', 'shoes', O.shoes, L.shoes, true)}
-          <div class="look-row"><span class="label">Detalles</span><div class="chips">${chip('straps', !L.straps, L.straps ? 'Quitar mochila' : 'Poner mochila', '')}${chip('star', !L.star, L.star ? 'Quitar estrellas' : 'Poner estrellas', '')}</div></div>
+          <div class="look-row"><span class="label">Mochila</span><div class="chips">${chip('straps', true, 'Con mochila', L.straps)}${chip('straps', false, 'Sin mochila', L.straps)}</div></div>
         </div></div>
       <p class="hint">Lo que desbloqueas en el inventario (cascos, llavero, handycam, skate) se lo pone tu personaje.</p></section>
     <section class="panel"><h3>Cuenta</h3>
@@ -717,7 +715,7 @@ function viewRanking() {
 function viewHero() {
   const xp = totalXP(), L = levelOf(xp), from = xpForLevel(L), to = xpForLevel(L + 1), p = (xp - from) / (to - from), m = mood();
   return html`<section class="hero" ${heroStyle()}>${viewAxis(m.kind)}
-    <div class="hero-txt">${when(S.look.preset === 'axis', `<img class="logo" src="${IMG.logo}" alt="AXIS">`)}
+    <div class="hero-txt">
       <span class="pill">${GLYPH.star}Nivel ${L}</span><h1>${rankFor(L)}</h1>
       <div class="xpbar" role="progressbar" aria-valuenow="${pct(p)}" aria-valuemin="0" aria-valuemax="100" aria-label="Progreso al siguiente nivel"><i style="width:${p * 100}%"></i></div>
       <small class="num">${xp} XP · faltan ${to - xp} para el nivel ${L + 1}</small></div>
@@ -758,7 +756,7 @@ function viewInventory() {
     return ok && i.wearable
       ? `<button class="item got ${on ? 'on' : ''}" data-act="toggleWear" data-k="${i.key}" aria-pressed="${on}" aria-label="${on ? 'Quitar' : 'Poner'} ${i.name}">${inner}</button>`
       : `<div class="item ${ok ? 'got' : 'locked'}" title="${ok ? i.name : 'Se desbloquea en el nivel ' + i.level}">${inner}</div>`;
-  })}</div><p class="hint inv-hint">Cascos, llavero, handycam y skate se los pone AXIS. Tócalos para ponérselos o quitárselos.</p></section>`;
+  })}</div><p class="hint inv-hint">Cascos, llavero, handycam y skate se los pone tu personaje. Tócalos para ponérselos o quitárselos.</p></section>`;
 }
 function viewNewCampaign() {
   return html`<section class="panel"><h3>Nueva campaña</h3>
@@ -1023,7 +1021,7 @@ function showLevelUp(L) {
   const item = ITEMS.find(i => i.level === L), el = document.createElement('div');
   el.className = 'lvlup';
   el.innerHTML = html`<div><span class="pill">${GLYPH.star}Subes de nivel</span><div class="big">${L}</div><h2>${rankFor(L)}</h2>
-    ${item ? `<img src="${IMG[item.key]}" alt=""><p class="hint on-lilac">Desbloqueas: <b>${item.name}</b>${item.wearable ? '. AXIS ya lo lleva puesto.' : ''}</p>` : ''}
+    ${item ? `<img src="${IMG[item.key]}" alt=""><p class="hint on-lilac">Desbloqueas: <b>${item.name}</b>${item.wearable ? '. Tu personaje ya lo lleva puesto.' : ''}</p>` : ''}
     <button class="btn dark wide">Seguir</button></div>`;
   el.addEventListener('click', () => el.remove());
   document.body.appendChild(el);
@@ -1087,9 +1085,9 @@ const actions = {
   setProfileColor: el => update(s => { s.color = colorHex(el.dataset.k); }, { reward: false }),
   setLook: el => update(s => {
     const v = el.dataset.v;
-    s.look = Object.assign({}, s.look, { [el.dataset.f]: v === 'true' ? true : v === 'false' ? false : v, preset: null });
+    s.look = Object.assign({}, s.look, { [el.dataset.f]: v === 'true' ? true : v === 'false' ? false : v });
   }, { reward: false }),
-  lookPreset: el => update(s => { s.look = el.dataset.k === 'axis' ? Object.assign({}, Character.AXIS) : Character.randomLook(); }, { reward: false }),
+  randomLook: () => update(s => { s.look = Character.randomLook(); }, { reward: false }),
   removePhoto: () => update(s => { s.photo = null; }, { reward: false }),
   rankTab: repaint(el => { ui.rankTab = el.dataset.k; }),
   shareApp: async () => {

@@ -1,13 +1,14 @@
 /* Personaje pixel art de cada jugador.
    Se dibuja en el navegador a partir de su "look" (colores, peinado, gorra…),
    con los objetos que lleva puestos y los ojos cerrados si está cansado.
-   Mismo dibujo que el AXIS original (36×68 px), pero con colores a elegir. */
+   Dibujo de 36×68 px con colores a elegir. */
 (function () {
 'use strict';
 
 const W = 36, H = 68;
 
-const AXIS = { preset: 'axis', skin: '#E8BF9C', hair: '#16161B', hairStyle: 'revuelto', cap: true, capColor: '#1C1C20', top: '#E2E2E4', pants: '#242428', shoes: '#F0F0F0', star: true, straps: true };
+// Valores por defecto de cualquier personaje
+const BASE = { skin: '#E8BF9C', hair: '#16161B', hairStyle: 'revuelto', cap: false, capColor: '#1C1C20', top: '#E2E2E4', pants: '#242428', shoes: '#F0F0F0', straps: false };
 const OPTIONS = {
   skin: ['#F5D6BA', '#E8BF9C', '#D6A57C', '#B07A52', '#8A5A3A', '#5C3A24'],
   hair: ['#16161B', '#4A3020', '#8B5A2B', '#C9A15A', '#E6DDCB', '#B03A2E', '#6C5CE7'],
@@ -19,8 +20,8 @@ const OPTIONS = {
 };
 const pick = list => list[Math.floor(Math.random() * list.length)];
 function randomLook() {
-  return { preset: null, skin: pick(OPTIONS.skin), hair: pick(OPTIONS.hair), hairStyle: pick(OPTIONS.hairStyle), cap: Math.random() < 0.5,
-    capColor: pick(OPTIONS.capColor), top: pick(OPTIONS.top), pants: pick(OPTIONS.pants), shoes: pick(OPTIONS.shoes), star: false, straps: Math.random() < 0.5 };
+  return { skin: pick(OPTIONS.skin), hair: pick(OPTIONS.hair), hairStyle: pick(OPTIONS.hairStyle), cap: Math.random() < 0.5,
+    capColor: pick(OPTIONS.capColor), top: pick(OPTIONS.top), pants: pick(OPTIONS.pants), shoes: pick(OPTIONS.shoes), straps: Math.random() < 0.5 };
 }
 
 // Colores
@@ -28,7 +29,7 @@ const hexToRgb = hex => { const n = parseInt(String(hex).replace('#', '').padEnd
 const shade = (hex, f) => hexToRgb(hex).map(v => Math.max(0, Math.min(255, Math.round(v * f))));
 const lighten = (hex, f) => hexToRgb(hex).map(v => Math.round(v + (255 - v) * f));
 const FIXED = { K: [17, 17, 17], W: [244, 244, 244], B: [14, 14, 16], M: [181, 181, 186], Bd: [24, 24, 27], Tr: [196, 196, 200], Wh: [239, 227, 200],
-  R: [229, 72, 60], G: [140, 140, 146], Gd: [70, 70, 76], Eye: [44, 44, 54], Kl: [184, 184, 188], Kd: [132, 132, 138] };
+  R: [229, 72, 60], Rd: [170, 40, 34], Y: [255, 197, 61], Yd: [201, 138, 0], Yl: [255, 230, 150], G: [140, 140, 146], Gd: [70, 70, 76], Eye: [44, 44, 54], Kl: [184, 184, 188], Kd: [132, 132, 138] };
 function palette(look) {
   return Object.assign({}, FIXED, {
     S: hexToRgb(look.skin), Ss: shade(look.skin, 0.85),
@@ -41,8 +42,8 @@ function palette(look) {
 }
 
 function paint(look, { items = [], closed = false } = {}) {
-  const c = palette(Object.assign({}, AXIS, look));
-  look = Object.assign({}, AXIS, look);
+  const c = palette(Object.assign({}, BASE, look));
+  look = Object.assign({}, BASE, look);
   const px = new Uint8ClampedArray(W * H * 4);
   const p = (x, y, k) => { if (x < 0 || y < 0 || x >= W || y >= H) return; const i = (y * W + x) * 4, v = c[k]; px[i] = v[0]; px[i + 1] = v[1]; px[i + 2] = v[2]; px[i + 3] = 255; };
   const r = (x0, y0, x1, y1, k) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) p(x, y, k); };
@@ -53,8 +54,7 @@ function paint(look, { items = [], closed = false } = {}) {
     r(30, 29, 33, 63, 'Bd'); pts([[30, 29], [33, 29], [30, 63], [33, 63]], 'K');
     r(31, 28, 32, 28, 'Bd'); r(31, 64, 32, 64, 'Bd');
     for (const y of [33, 58]) { r(29, y, 34, y + 1, 'Wh'); r(30, y - 1, 33, y - 1, 'Tr'); }
-    pts([[31, 45], [32, 45], [31, 46], [32, 46], [31, 44], [32, 47], [31, 47], [32, 44]], 'W'); pts([[31, 43], [32, 48]], 'Kl');
-    r(31, 52, 32, 53, 'Kd');
+    r(31, 42, 32, 49, 'R'); pts([[31, 43], [31, 48]], 'Rd');
   }
   // Pantalón ancho
   for (let y = 37; y <= 60; y++) { const t = (y - 37) / 23; r(Math.round(9 - 3 * t), y, Math.round(23 + 3 * t), y, 'P'); }
@@ -65,13 +65,12 @@ function paint(look, { items = [], closed = false } = {}) {
   // Zapatillas
   r(5, 60, 14, 63, 'Sh'); r(18, 60, 27, 63, 'Sh'); r(5, 64, 14, 64, 'Sg'); r(18, 64, 27, 64, 'Sg');
   r(7, 60, 12, 60, 'Pd'); r(20, 60, 25, 60, 'Pd');
-  if (look.star) { pts([[9, 62], [10, 61], [10, 62], [11, 62], [10, 63]], 'K'); pts([[22, 62], [23, 61], [23, 62], [24, 62], [23, 63]], 'K'); }
-  else { r(8, 62, 11, 62, 'Sg'); r(21, 62, 24, 62, 'Sg'); }
+  r(8, 62, 11, 62, 'Sg'); r(21, 62, 24, 62, 'Sg');
   // Cinturón
   r(9, 35, 23, 36, 'B'); r(15, 35, 17, 36, 'M'); p(16, 35, 'B');
   if (has('llavero')) {
     for (let y = 37; y < 42; y++) p(20, y, y % 2 ? 'M' : 'Kd');
-    pts([[19, 42], [22, 42]], 'W'); r(19, 43, 22, 45, 'W'); pts([[20, 44], [21, 44]], 'Kd'); r(20, 46, 21, 47, 'Kl');
+    r(19, 42, 22, 46, 'Y'); p(19, 42, 'Yl'); r(20, 44, 21, 45, 'Yd');
   }
   // Sudadera
   r(9, 19, 23, 34, 'L'); r(6, 20, 26, 22, 'L'); r(4, 21, 9, 36, 'L'); r(23, 21, 28, 36, 'L');
@@ -81,10 +80,6 @@ function paint(look, { items = [], closed = false } = {}) {
   if (look.straps) { r(10, 20, 11, 32, 'B'); r(21, 20, 22, 32, 'B'); pts([[10, 26], [11, 26], [21, 26], [22, 26]], 'M'); }
   for (let y = 20; y < 25; y++) { p(14, y, 'Ld'); p(18, y, 'Ld'); }
   pts([[14, 25], [18, 25]], 'Ld');
-  if (look.star) {
-    pts([[17, 24], [17, 25], [16, 26], [17, 26], [18, 26], [15, 26], [19, 26], [17, 27], [17, 28]], 'Ld'); p(17, 26, 'K');
-    pts([[6, 24], [6, 25], [5, 26], [6, 26], [7, 26], [6, 27], [6, 28]], 'Ld'); p(6, 26, 'K');
-  }
   if (has('handycam')) { r(0, 34, 6, 39, 'Bd'); r(1, 35, 5, 35, 'Gd'); pts([[0, 36], [0, 37]], 'G'); r(5, 33, 6, 33, 'Bd'); p(2, 37, 'R'); }
   // Manos, capucha y cuello
   r(5, 37, 8, 39, 'S'); r(5, 39, 8, 39, 'Ss'); r(26, 36, 29, 38, 'S'); r(26, 38, 29, 38, 'Ss'); r(29, 36, 30, 37, 'S');
@@ -110,7 +105,6 @@ function paint(look, { items = [], closed = false } = {}) {
   // Gorra o pelo por arriba
   if (look.cap) {
     r(11, 1, 21, 5, 'C'); r(10, 2, 22, 5, 'C'); r(12, 0, 20, 0, 'C'); r(8, 6, 24, 7, 'Cb'); r(9, 6, 23, 6, 'C'); r(13, 1, 15, 2, 'Cs');
-    if (look.star) pts([[16, 1], [16, 2], [15, 3], [16, 3], [17, 3], [14, 3], [18, 3], [16, 4], [16, 5]], 'W');
   } else {
     const top = look.hairStyle === 'corto' ? 4 : 2;
     r(11, top, 21, 7, 'H'); r(10, top + 1, 22, 7, 'H'); r(12, top - 1, 20, top - 1, 'H'); r(9, 5, 23, 7, 'H');
@@ -151,5 +145,5 @@ function face(look) {
   return cache.get(key);
 }
 
-window.Character = { AXIS, OPTIONS, randomLook, image, face, W, H };
+window.Character = { BASE, OPTIONS, randomLook, image, face, W, H };
 })();

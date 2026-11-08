@@ -1,14 +1,13 @@
 // Guarda la app en el móvil para que abra rápido y funcione sin conexión.
 // Al cambiar cualquier archivo, sube VERSION para que los móviles descarguen la nueva.
-const VERSION = 'v11';
+const VERSION = 'v12';
 const CACHE = `modo-campana-${VERSION}`;
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'config.js', 'character.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon.png',
-  'assets/hero.png', 'assets/face.png', 'assets/logo.webp', 'assets/cofre.png', 'assets/cofre-abierto.png', 'assets/moneda.png', 'assets/jefe.png',
-  'assets/axis/base.png', 'assets/axis/ojos.png', 'assets/axis/llavero.png', 'assets/axis/auriculares.png', 'assets/axis/handycam.png', 'assets/axis/skate.png',
-  'assets/llavero.png', 'assets/movil.png', 'assets/auriculares.png', 'assets/spray.png',
-  'assets/mechero.png', 'assets/handycam.png', 'assets/skate.png',
+  'assets/cofre.png', 'assets/cofre-abierto.png', 'assets/moneda.png', 'assets/jefe.png',
+  'assets/items/llavero.png', 'assets/items/botella.png', 'assets/items/auriculares.png', 'assets/items/movil.png',
+  'assets/items/mancuerna.png', 'assets/items/handycam.png', 'assets/items/skate.png',
 ];
 
 self.addEventListener('install', event => {
