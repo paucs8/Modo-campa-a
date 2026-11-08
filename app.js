@@ -62,7 +62,7 @@ const EXERCISE_KINDS = {
   min: 'Minutos',
   run: 'Carrera (km + min)',
 };
-const STORAGE = { state: 'modo-campana', draft: 'modo-campana-draft', pending: 'modo-campana-import' };
+const STORAGE = { state: 'modo-campana', draft: 'modo-campana-draft' };
 const SYNC_LABEL = {
   cloud: 'Sincronizado', saving: 'Guardando…', error: 'Sin conexión: se subirá al volver',
   signedout: 'Sin sincronizar: toca para entrar', off: 'Solo en este dispositivo', local: 'Solo en este dispositivo',
@@ -334,23 +334,11 @@ async function mergeWithCloud() {
   if (data && data.state) { S = mergeProgress(migrate(data.state), S); render(); }
   persist();
 }
-/** Progreso que llegó con un enlace #import=…: se junta en cuanto hay sesión (o al momento, sin nube). */
-async function applyPendingImport() {
-  const code = storage.get(STORAGE.pending);
-  if (!code) return;
-  let incoming;
-  try { incoming = await decodeProgress(code); } catch (e) { incoming = null; }
-  storage.set(STORAGE.pending, null);
-  if (!incoming || !Array.isArray(incoming.campaigns)) { toast('El enlace de progreso no es válido'); return; }
-  update(s => mergeProgress(s, incoming));
-  toast('Progreso importado y sincronizado');
-}
 async function startSync(user, { fresh = false } = {}) {
   cloud.user = user;
   ui.account = false;
   render();
   if (fresh) await mergeWithCloud(); else await pull();
-  await applyPendingImport();
   listenRemote();
 }
 function stopSync() {
@@ -359,11 +347,11 @@ function stopSync() {
   setSync('signedout');
 }
 async function initCloud() {
-  if (!CONFIG.supabaseUrl || !CONFIG.supabaseKey || !window.supabase) { setSync('off'); applyPendingImport(); return; }
+  if (!CONFIG.supabaseUrl || !CONFIG.supabaseKey || !window.supabase) { setSync('off'); return; }
   cloud.client = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true } });
   const { data } = await cloud.client.auth.getSession();
   if (data.session) startSync(data.session.user);
-  else { setSync('signedout'); if (storage.get(STORAGE.pending)) { ui.account = true; render(); } }
+  else setSync('signedout');
   cloud.client.auth.onAuthStateChange((event, session) => {
     if (event === 'SIGNED_IN' && session && (!cloud.user || cloud.user.id !== session.user.id)) startSync(session.user, { fresh: true });
     if (event === 'SIGNED_OUT') stopSync();
@@ -403,14 +391,8 @@ function viewTop() {
     <div class="hello"><b>Hola, ${esc(S.name)}</b><span>${esc(d[0].toUpperCase() + d.slice(1))}</span></div>
     <button class="sync" id="sync" data-s="${ui.sync}" title="${SYNC_LABEL[ui.sync]}" aria-label="${SYNC_LABEL[ui.sync]}" data-act="syncInfo"><i></i></button></header>`;
 }
-const viewImport = () => html`<details class="import"><summary>Traer progreso de otra versión</summary>
-    <form class="stack-s" data-form="importProgress"><textarea name="code" rows="3" placeholder="Pega aquí el código" aria-label="Código de progreso" required></textarea>
-    <button class="btn">Importar</button><p class="hint">Se junta con lo que ya tienes aquí: no se borra nada.</p></form></details>`;
 function viewAccount() {
   if (!ui.account) return '';
-  return viewAccountBody().replace(/<\/section>$/, viewImport() + '</section>');
-}
-function viewAccountBody() {
   if (ui.sync === 'off') return html`<section class="panel"><h3>Sincronización</h3><p class="hint">Falta configurar Supabase. Mientras tanto, todo se guarda en este dispositivo.</p></section>`;
   if (cloud.user) return html`<section class="panel"><h3>Tu cuenta <button class="btn ghost" data-act="toggleAccount">Cerrar</button></h3>
     <p class="hint">Conectado como <b>${esc(cloud.user.email || '')}</b>. ${SYNC_LABEL[ui.sync]}.</p>
@@ -421,7 +403,6 @@ function viewAccountBody() {
       <label class="fld"><span>Contraseña</span><input name="password" type="password" autocomplete="current-password" minlength="6" required></label>
       <div class="edit-row"><button class="btn primary">Entrar</button><button type="button" class="btn" data-act="signUp">Crear cuenta</button></div>
     </form>
-    ${when(storage.get(STORAGE.pending), '<p class="sug">Entra con tu cuenta y tu progreso antiguo se junta solo.</p>')}
     <p class="hint">Usa la misma cuenta en el móvil y en el PC. Al entrar se junta lo de este dispositivo con lo de tu cuenta.</p></section>`;
 }
 function viewHero() {
@@ -798,15 +779,6 @@ const authError = e => /invalid login/i.test(e.message) ? 'Email o contraseña i
   : /not confirmed/i.test(e.message) ? 'Confirma tu email desde el correo que te llegó'
   : /already registered/i.test(e.message) ? 'Ya existe esa cuenta: dale a Entrar'
   : 'No se pudo: ' + e.message;
-/** Lee un código "MC1." (JSON comprimido) o JSON directo. */
-async function decodeProgress(code) {
-  const text = code.trim();
-  if (text.startsWith('{')) return JSON.parse(text);
-  const b64 = text.replace(/^MC1\./, '').replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
-  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-  return JSON.parse(await new Response(stream).text());
-}
 /** Junta otro progreso con el actual sin perder nada de ninguno de los dos. */
 function mergeProgress(cur, inc) {
   inc = migrate(JSON.parse(JSON.stringify(inc)));
@@ -857,14 +829,6 @@ function mergeProgress(cur, inc) {
   return cur;
 }
 const forms = {
-  importProgress: async (f, F) => {
-    let incoming;
-    try { incoming = await decodeProgress(F.code.value); } catch (e) { toast('Ese código no es válido. Cópialo entero'); return; }
-    if (!incoming || !Array.isArray(incoming.campaigns)) { toast('Ese código no es válido. Cópialo entero'); return; }
-    update(s => mergeProgress(s, incoming));
-    ui.account = false; render(); window.scrollTo(0, 0);
-    toast('Progreso importado');
-  },
   signIn: async (f, F) => {
     const { error } = await cloud.client.auth.signInWithPassword({ email: F.email.value.trim(), password: F.password.value });
     if (error) toast(authError(error)); else toast('Conectado. Sincronizando…');
@@ -938,10 +902,6 @@ document.addEventListener('keydown', ev => {
   actions[ENTER[ev.target.id]]();
 });
 
-if (location.hash.startsWith('#import=')) {
-  storage.set(STORAGE.pending, decodeURIComponent(location.hash.slice(8)));
-  history.replaceState(null, '', location.pathname + location.search);
-}
 render();
 initCloud();
 })();
