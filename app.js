@@ -138,13 +138,16 @@ function defaultRoutines() {
 }
 const reward = (name, cost) => ({ id: uid(), name, cost });
 const defaultRewards = () => [
-  reward('Un café o un snack fuera', 60),
-  reward('Tarde de videojuegos o serie', 120),
-  reward('Un día libre de entreno sin culpa', 200),
-  reward('Cena fuera o pedir comida', 400),
-  reward('Un capricho (ropa, algo para el skate…)', 800),
+  reward('Ir al cine', 250),
+  reward('Comprarme algo pequeño que me apetezca (hasta 20 €)', 400),
+  reward('Algo para el skate (ruedas, lija, rodamientos…)', 700),
+  reward('Algo para grabar (filtro, micro, accesorio…)', 900),
+  reward('Comprarme eso que llevo tiempo queriendo (hasta 60 €)', 1500),
+  reward('Concierto o plan especial', 2000),
 ];
-const defaultState = () => ({ v: 4, name: 'Pau', weight: { start: null, goal: null, log: [] }, train: [], sessions: [], routines: defaultRoutines(), campaigns: defaultCampaigns(),
+// Premios de ejemplo de la versión anterior: si siguen sin tocar, se cambian por los nuevos
+const OLD_REWARDS = ['Un café o un snack fuera', 'Tarde de videojuegos o serie', 'Un día libre de entreno sin culpa', 'Cena fuera o pedir comida', 'Un capricho (ropa, algo para el skate…)'];
+const defaultState = () => ({ v: 5, name: 'Pau', weight: { start: null, goal: null, log: [] }, train: [], sessions: [], routines: defaultRoutines(), campaigns: defaultCampaigns(),
   daily: {}, activity: {}, rewards: defaultRewards(), purchases: [], unequipped: [] });
 
 /** Pone al día datos guardados por versiones anteriores. */
@@ -164,7 +167,9 @@ function migrate(s) {
   // v4: misiones diarias, tienda y objetos equipables
   s.daily = s.daily || {}; s.activity = s.activity || {};
   s.rewards = s.rewards || defaultRewards(); s.purchases = s.purchases || []; s.unequipped = s.unequipped || [];
-  s.v = 4;
+  // v5: premios nuevos (cine y compras) si los de ejemplo no se habían cambiado
+  if ((s.v || 0) < 5 && s.rewards.every(r => OLD_REWARDS.includes(r.name))) s.rewards = defaultRewards();
+  s.v = 5;
   return s;
 }
 
