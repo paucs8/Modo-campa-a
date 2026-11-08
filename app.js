@@ -177,6 +177,7 @@ function migrate(s) {
   // Personaje propio (el antiguo preset fijo pasa a ser un personaje normal para personalizar)
   if (!s.look || s.look.preset === 'axis') s.look = Character.randomLook();
   delete s.look.preset; delete s.look.star;
+  s.look = Character.upgrade(s.look); // personaje por capas (v2)
   if (s.photo === undefined) s.photo = null;
   s.v = 5;
   return s;
@@ -191,7 +192,7 @@ const ui = {
   addingCampaign: false, newIcon: 'star', newColor: 'pink',
   draft: storage.get(STORAGE.draft), sync: 'local', exForm: null, account: false,
   addingReward: false, bossHit: null,
-  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false }, profileExtras: true,
+  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false }, profileExtras: true, lookTab: 'cara',
 };
 
 /* =========================================================
@@ -637,15 +638,49 @@ function viewOnboarding() {
     </form>
     ${when(ui.sync !== 'off', '<p class="hint center">¿Ya tienes cuenta? <button class="linkbtn" data-act="syncInfo">Entra aquí</button></p>')}`;
 }
-const LOOK_LABELS = { revuelto: 'Revuelto', largo: 'Largo', corto: 'Corto' };
-function viewLookRow(label, field, options, current, custom = false) {
+function viewLookRow(label, field, options, current, custom = true) {
+  const cur = String(current || '');
   return `<div class="look-row"><span class="label">${label}</span><div class="swatches">${options.map(v =>
-    `<button type="button" data-act="setLook" data-f="${field}" data-v="${v}" aria-pressed="${String(current).toLowerCase() === v.toLowerCase()}" aria-label="${label} ${v}" style="background:${v}"></button>`).join('')}
-    ${custom ? `<label class="swatch-custom" title="Otro color"><input type="color" value="${current}" data-color-act="setLook" data-f="${field}" aria-label="Otro color de ${label.toLowerCase()}"><span>+</span></label>` : ''}</div></div>`;
+    `<button type="button" data-act="setLook" data-f="${field}" data-v="${v}" aria-pressed="${cur.toLowerCase() === v.toLowerCase()}" aria-label="${label} ${v}" style="background:${v}"></button>`).join('')}
+    ${custom ? `<label class="swatch-custom ${cur && !options.some(o => o.toLowerCase() === cur.toLowerCase()) ? 'on' : ''}" title="Otro color" style="${cur && !options.some(o => o.toLowerCase() === cur.toLowerCase()) ? `background:${cur}` : ''}"><input type="color" value="${cur || '#888888'}" data-color-act="setLook" data-f="${field}" aria-label="Otro color de ${label.toLowerCase()}"><span>+</span></label>` : ''}</div></div>`;
+}
+const chipsRow = (label, field, map, current) => `<div class="look-row"><span class="label">${label}</span><div class="chips">${Object.entries(map).map(([v, t]) => chip(field, v, t, current)).join('')}</div></div>`;
+const yesNo = (label, field, current, yes = 'Sí', no = 'No') => `<div class="look-row"><span class="label">${label}</span><div class="chips">${chip(field, true, yes, !!current)}${chip(field, false, no, !!current)}</div></div>`;
+const LOOK_TABS = { cara: 'Cara', pelo: 'Pelo', ropa: 'Ropa', extras: 'Extras' };
+function viewLookControls(L) {
+  const C = Character.COLORS, T = Character.STYLES;
+  switch (ui.lookTab) {
+    case 'pelo': return [
+      chipsRow('Peinado', 'hairStyle', T.hairStyle, L.hairStyle),
+      viewLookRow('Color', 'hair', C.hair, L.hair),
+      `<div class="look-row"><span class="label">Puntas de otro color</span><div class="chips">${chip('hair2', 'null', 'No', L.hair2 === null ? 'null' : '')}</div></div>`,
+      viewLookRow('Color de las puntas', 'hair2', C.hair, L.hair2 || ''),
+      yesNo('Flequillo', 'bangs', L.bangs), yesNo('Trencitas en la cara', 'braids', L.braids),
+    ].join('');
+    case 'ropa': return [
+      chipsRow('Arriba', 'top', T.top, L.top), viewLookRow('Color', 'topColor', C.cloth, L.topColor),
+      when(['capas', 'camisa', 'chaqueta'].includes(L.top), viewLookRow(L.top === 'capas' ? 'Manga de debajo' : 'Camiseta de dentro', 'top2', C.cloth, L.top2)),
+      chipsRow('Estampado', 'pattern', T.pattern, L.pattern), when(L.pattern !== 'liso', viewLookRow('Color del estampado', 'stripe', C.cloth, L.stripe)),
+      chipsRow('Abajo', 'bottom', T.bottom, L.bottom), viewLookRow('Color', 'bottomColor', C.bottom, L.bottomColor),
+      when(L.bottom === 'chandal', viewLookRow('Color de la raya', 'stripe', C.cloth, L.stripe)),
+      when(L.bottom === 'corto' || L.bottom === 'falda', chipsRow('Piernas', 'legs', T.legs, L.legs) + when(L.legs !== 'piel', viewLookRow('Color de las medias', 'legsColor', C.legs, L.legsColor))),
+      chipsRow('Calzado', 'shoes', T.shoes, L.shoes), viewLookRow('Color', 'shoesColor', C.shoes, L.shoesColor),
+    ].join('');
+    case 'extras': return [
+      chipsRow('Cabeza', 'head', T.head, L.head), when(L.head !== 'no', viewLookRow('Color', 'headColor', C.head, L.headColor)),
+      chipsRow('Bolsa', 'bag', T.bag, L.bag), when(L.bag === 'bolso' || L.bag === 'rinonera', viewLookRow('Color', 'bagColor', C.cloth, L.bagColor)),
+      yesNo('Collar', 'necklace', L.necklace), yesNo('Cadena', 'chain', L.chain), yesNo('Pendientes', 'earrings', L.earrings),
+    ].join('');
+    default: return [
+      viewLookRow('Piel', 'skin', C.skin, L.skin), viewLookRow('Ojos', 'eyes', C.eyes, L.eyes),
+      chipsRow('Gafas', 'glasses', T.glasses, L.glasses), chipsRow('Barba', 'beard', T.beard, L.beard),
+      yesNo('Pecas', 'freckles', L.freckles), yesNo('Colorete', 'blush', L.blush),
+    ].join('');
+  }
 }
 const chip = (field, value, label, current) => `<button type="button" class="chip-btn" data-act="setLook" data-f="${field}" data-v="${value}" aria-pressed="${String(current) === String(value)}">${label}</button>`;
 function viewProfile() {
-  const L = S.look, O = Character.OPTIONS, xp = totalXP();
+  const L = Character.upgrade(S.look), xp = totalXP();
   return html`<section class="c-hero profile-hero" ${heroStyle()}>
     <div class="me-row"><span class="big-ava">${S.photo ? `<img src="${S.photo}" alt="Tu foto">` : `<img class="pix" src="${Character.face(L)}" alt="">`}</span>
       <div><h2>${esc(S.name || 'Tu perfil')}</h2><p>Nivel ${levelOf(xp)} · ${rankFor(levelOf(xp))}</p></div></div>
@@ -655,18 +690,9 @@ function viewProfile() {
       <form class="inrow" data-form="saveProfile"><input name="n" maxlength="24" required value="${esc(S.name)}" aria-label="Tu nombre"><button class="btn">Guardar nombre</button></form>
       <div class="fld"><span>Tu color: pinta tu tarjeta y tu sitio en el ranking</span>${viewColorPicker(S.color, 'setProfileColor')}</div></section>
     <section class="panel"><h3>Tu personaje <button class="btn ghost" data-act="randomLook">Aleatorio</button></h3>
+      <div class="look-tabs" role="tablist">${Object.entries(LOOK_TABS).map(([k, t]) => `<button role="tab" data-act="lookTab" data-k="${k}" aria-selected="${ui.lookTab === k}">${t}</button>`).join('')}</div>
       <div class="look-editor"><div class="look-preview" style="background:${colorHex(S.color)}">${viewAxis('happy')}</div>
-        <div class="look-controls">
-          ${viewLookRow('Piel', 'skin', O.skin, L.skin)}
-          ${viewLookRow('Pelo', 'hair', O.hair, L.hair, true)}
-          <div class="look-row"><span class="label">Peinado</span><div class="chips">${O.hairStyle.map(v => chip('hairStyle', v, LOOK_LABELS[v], L.hairStyle))}</div></div>
-          <div class="look-row"><span class="label">Gorra</span><div class="chips">${chip('cap', true, 'Con gorra', L.cap)}${chip('cap', false, 'Sin gorra', L.cap)}</div></div>
-          ${when(L.cap, viewLookRow('Color de gorra', 'capColor', O.capColor, L.capColor, true))}
-          ${viewLookRow('Sudadera', 'top', O.top, L.top, true)}
-          ${viewLookRow('Pantalón', 'pants', O.pants, L.pants, true)}
-          ${viewLookRow('Zapatillas', 'shoes', O.shoes, L.shoes, true)}
-          <div class="look-row"><span class="label">Mochila</span><div class="chips">${chip('straps', true, 'Con mochila', L.straps)}${chip('straps', false, 'Sin mochila', L.straps)}</div></div>
-        </div></div>
+        <div class="look-controls">${viewLookControls(L)}</div></div>
       <p class="hint">Lo que desbloqueas en el inventario (cascos, llavero, handycam, skate) se lo pone tu personaje.</p></section>
     <section class="panel"><h3>Cuenta</h3>
       ${cloud.user ? html`<p class="hint">Conectado como <b>${esc(cloud.user.email || '')}</b>. ${SYNC_LABEL[ui.sync]}.</p>
@@ -1085,8 +1111,9 @@ const actions = {
   setProfileColor: el => update(s => { s.color = colorHex(el.dataset.k); }, { reward: false }),
   setLook: el => update(s => {
     const v = el.dataset.v;
-    s.look = Object.assign({}, s.look, { [el.dataset.f]: v === 'true' ? true : v === 'false' ? false : v });
+    s.look = Object.assign({}, Character.upgrade(s.look), { [el.dataset.f]: v === 'true' ? true : v === 'false' ? false : v === 'null' ? null : v });
   }, { reward: false }),
+  lookTab: repaint(el => { ui.lookTab = el.dataset.k; }),
   randomLook: () => update(s => { s.look = Character.randomLook(); }, { reward: false }),
   removePhoto: () => update(s => { s.photo = null; }, { reward: false }),
   rankTab: repaint(el => { ui.rankTab = el.dataset.k; }),

@@ -51,7 +51,7 @@ h2,h3{text-wrap:balance}
 
 /* Hero */
 .hero{position:relative;background:var(--hero-bg,var(--lilac));color:var(--hero-ink,#111);border-radius:var(--r);padding:20px 20px 18px;margin-top:34px;min-height:200px;display:flex;flex-direction:column;gap:12px}
-.hero .char{position:absolute;right:10px;bottom:14px;height:calc(100% + 30px);max-height:280px;aspect-ratio:36/68;max-width:40%;pointer-events:none;filter:drop-shadow(0 8px 0 rgba(17,17,17,.18));transform-origin:50% 100%}
+.hero .char{position:absolute;right:10px;bottom:14px;height:calc(100% + 30px);max-height:280px;aspect-ratio:44/82;max-width:42%;pointer-events:none;filter:drop-shadow(0 8px 0 rgba(17,17,17,.18));transform-origin:50% 100%}
 .char img{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
 .char.mood-happy,.char.mood-proud{animation:bob 1.4s steps(2,jump-none) infinite}
 .char.mood-fire{animation:bob .7s steps(2,jump-none) infinite}
@@ -411,7 +411,7 @@ textarea{font-size:16px}
 .file-btn{cursor:pointer}
 .look-editor{display:grid;grid-template-columns:120px minmax(0,1fr);gap:14px;align-items:start}
 .look-preview{position:sticky;top:calc(12px + env(safe-area-inset-top,0px));border-radius:20px;height:220px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:10px}
-.look-preview .char{position:relative;height:190px;aspect-ratio:36/68;filter:drop-shadow(0 6px 0 rgba(17,17,17,.18))}
+.look-preview .char{position:relative;height:190px;aspect-ratio:44/82;filter:drop-shadow(0 6px 0 rgba(17,17,17,.18))}
 .look-preview .char img{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
 .look-controls{display:flex;flex-direction:column;gap:12px;min-width:0}
 .look-row{display:flex;flex-direction:column;gap:6px}
@@ -425,3 +425,7 @@ textarea{font-size:16px}
 .ava{overflow:hidden}
 .ava img{width:100%;height:100%;object-fit:cover}
 .ava.pix img{image-rendering:pixelated;object-position:50% 25%}
+
+.look-tabs{display:flex;gap:4px;background:var(--bg);border-radius:999px;padding:4px;overflow-x:auto;scrollbar-width:none}
+.look-tabs button{flex:1;border:0;background:none;border-radius:999px;padding:8px 10px;font-weight:600;font-size:13.5px;color:var(--muted);white-space:nowrap}
+.look-tabs button[aria-selected="true"]{background:var(--ink);color:var(--on-ink)}
