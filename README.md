@@ -13,8 +13,15 @@ Mis objetivos como un videojuego: campañas por niveles, misiones con XP, peso, 
 | `supabase.sql` | Tabla y reglas de acceso para Supabase. |
 | `sw.js` | Hace que se pueda instalar y abrir sin conexión. Sube `VERSION` al cambiar archivos. |
 | `manifest.webmanifest` | Nombre, colores e iconos de la app instalada. |
-| `assets/` | AXIS y los objetos del inventario en pixel art. |
+| `assets/` | AXIS por capas (`assets/axis/`), objetos, cofre, moneda y jefe en pixel art. |
 | `icons/` | Iconos de la app. |
+
+## Cómo motiva
+
+- **Misiones de hoy**: 3 al día (entrenar, avanzar en una campaña y un hábito). Al completarlas se abre el cofre con monedas y XP.
+- **Tienda**: las monedas se canjean por premios reales que defines tú.
+- **AXIS**: cambia de ánimo según lo que hayas hecho estos días y se pone los objetos que desbloqueas.
+- **Jefe final**: el último nivel de cada campaña tiene vida, y cada misión de los niveles anteriores se la quita.
 
 ## Datos y sincronización
 

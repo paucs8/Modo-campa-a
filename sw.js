@@ -1,11 +1,12 @@
 // Guarda la app en el móvil para que abra rápido y funcione sin conexión.
 // Al cambiar cualquier archivo, sube VERSION para que los móviles descarguen la nueva.
-const VERSION = 'v7';
+const VERSION = 'v8';
 const CACHE = `modo-campana-${VERSION}`;
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon.png',
-  'assets/hero.png', 'assets/face.png', 'assets/logo.webp',
+  'assets/hero.png', 'assets/face.png', 'assets/logo.webp', 'assets/cofre.png', 'assets/cofre-abierto.png', 'assets/moneda.png', 'assets/jefe.png',
+  'assets/axis/base.png', 'assets/axis/ojos.png', 'assets/axis/llavero.png', 'assets/axis/auriculares.png', 'assets/axis/handycam.png', 'assets/axis/skate.png',
   'assets/llavero.png', 'assets/movil.png', 'assets/auriculares.png', 'assets/spray.png',
   'assets/mechero.png', 'assets/handycam.png', 'assets/skate.png',
 ];
@@ -35,6 +36,6 @@ self.addEventListener('fetch', event => {
         }
         return response;
       })
-      .catch(() => caches.match(request).then(hit => hit || caches.match('index.html')))
+      .catch(() => caches.match(request).then(hit => hit || (request.mode === 'navigate' ? caches.match('index.html') : Response.error())))
   );
 });

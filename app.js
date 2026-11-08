@@ -14,8 +14,14 @@ const IMG = {
   "mechero": "assets/mechero.png",
   "handycam": "assets/handycam.png",
   "skate": "assets/skate.png",
-  "logo": "assets/logo.webp"
+  "logo": "assets/logo.webp",
+  "chest": "assets/cofre.png",
+  "chestOpen": "assets/cofre-abierto.png",
+  "coin": "assets/moneda.png",
+  "boss": "assets/jefe.png"
 };
+// AXIS por capas: la base y lo que lleva puesto se apilan en la misma caja
+const AXIS_LAYERS = { base: 'assets/axis/base.png', eyesClosed: 'assets/axis/ojos.png', llavero: 'assets/axis/llavero.png', auriculares: 'assets/axis/auriculares.png', handycam: 'assets/axis/handycam.png', skate: 'assets/axis/skate.png' };
 
 const svg = (paths, attrs = '') =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${attrs}>${paths}</svg>`;
@@ -38,22 +44,32 @@ const GLYPH = {
   plus: svg('<path d="M12 5v14M5 12h14"/>', 'width="22" height="22"'),
   check: svg('<path d="m5 12.5 4.5 4.5L19 7.5"/>', 'stroke-width="3.2"'),
   chev: svg('<path d="m6 9 6 6 6-6"/>', 'width="20" height="20" stroke-width="2.4"'),
+  bag: svg('<path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>'),
   star: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1.5 14.2 9.8 22.5 12 14.2 14.2 12 22.5 9.8 14.2 1.5 12 9.8 9.8z"/></svg>',
 };
 
 const COLORS = ['lilac', 'orange', 'blue', 'lime', 'pink'];
 const RANKS = ['Novato', 'Aprendiz', 'Explorador', 'Veterano', 'Élite', 'Maestro', 'Leyenda'];
 const ITEMS = [
-  { key: 'llavero', name: 'Llavero', level: 2 },
+  { key: 'llavero', name: 'Llavero', level: 2, wearable: true },
   { key: 'movil', name: 'Móvil', level: 3 },
-  { key: 'auriculares', name: 'Cascos', level: 4 },
+  { key: 'auriculares', name: 'Cascos', level: 4, wearable: true },
   { key: 'spray', name: 'Spray', level: 5 },
   { key: 'mechero', name: 'Mechero', level: 6 },
-  { key: 'handycam', name: 'Handycam', level: 7 },
-  { key: 'skate', name: 'Skate', level: 8 },
+  { key: 'handycam', name: 'Handycam', level: 7, wearable: true },
+  { key: 'skate', name: 'Skate', level: 8, wearable: true },
   { key: 'hero', name: 'AXIS', level: 10 },
 ];
 const XP = { train: 5, record: 10 };
+const COINS = { train: 3, record: 5, missionShare: 0.5 };
+const HABITS = [
+  { key: 'agua', label: 'Bebe 2 litros de agua' },
+  { key: 'dormir', label: 'Duerme 7 horas o más' },
+  { key: 'estirar', label: '10 minutos de estiramientos' },
+  { key: 'caminar', label: 'Sal a caminar 20 minutos' },
+  { key: 'comida', label: 'Hazte una comida sana' },
+  { key: 'pantalla', label: 'Sin móvil la media hora antes de dormir' },
+];
 const xpForLevel = L => 50 * L * (L - 1);
 const EXERCISE_KINDS = {
   peso: 'Peso (kg × repes)',
@@ -120,7 +136,16 @@ function defaultRoutines() {
     { id: uid(), name: 'Gimnasio B', exercises: [exercise('Peso muerto rumano', 3, 8, 12), exercise('Press militar', 3, 8, 12), exercise('Jalón al pecho', 3, 8, 12), exercise('Extensión de tríceps', 2, 10, 15, 'peso', 1)] },
   ];
 }
-const defaultState = () => ({ v: 3, name: 'Pau', weight: { start: null, goal: null, log: [] }, train: [], sessions: [], routines: defaultRoutines(), campaigns: defaultCampaigns() });
+const reward = (name, cost) => ({ id: uid(), name, cost });
+const defaultRewards = () => [
+  reward('Un café o un snack fuera', 60),
+  reward('Tarde de videojuegos o serie', 120),
+  reward('Un día libre de entreno sin culpa', 200),
+  reward('Cena fuera o pedir comida', 400),
+  reward('Un capricho (ropa, algo para el skate…)', 800),
+];
+const defaultState = () => ({ v: 4, name: 'Pau', weight: { start: null, goal: null, log: [] }, train: [], sessions: [], routines: defaultRoutines(), campaigns: defaultCampaigns(),
+  daily: {}, activity: {}, rewards: defaultRewards(), purchases: [], unequipped: [] });
 
 /** Pone al día datos guardados por versiones anteriores. */
 function migrate(s) {
@@ -136,7 +161,10 @@ function migrate(s) {
   const defaultColors = { carnet: 'orange', fisico: 'lime' };
   s.campaigns.forEach((c, i) => { c.color = c.color || defaultColors[c.id] || COLORS[i % COLORS.length]; });
   s.routines.forEach(r => r.exercises.forEach(x => { if (x.name === 'Sentadillas sin peso') x.name = 'Sentadillas'; }));
-  s.v = 3;
+  // v4: misiones diarias, tienda y objetos equipables
+  s.daily = s.daily || {}; s.activity = s.activity || {};
+  s.rewards = s.rewards || defaultRewards(); s.purchases = s.purchases || []; s.unequipped = s.unequipped || [];
+  s.v = 4;
   return s;
 }
 
@@ -148,6 +176,7 @@ const ui = {
   view: 'home', editing: false, open: {}, armed: null,
   addingCampaign: false, newIcon: 'star', newColor: 'pink',
   draft: storage.get(STORAGE.draft), sync: 'local', exForm: null, account: false,
+  addingReward: false, bossHit: null,
 };
 
 /* =========================================================
@@ -205,7 +234,7 @@ function currentLevelIndex(c) {
   return i < 0 ? c.levels.length - 1 : i;
 }
 function totalXP() {
-  return S.train.length * XP.train + totalRecords() * XP.record + allMissions().filter(isDone).reduce((a, m) => a + m.xp, 0);
+  return S.train.length * XP.train + totalRecords() * XP.record + allMissions().filter(isDone).reduce((a, m) => a + m.xp, 0) + chestTotals().xp;
 }
 function levelOf(xp) { let L = 1; while (xpForLevel(L + 1) <= xp) L++; return L; }
 function streak() {
@@ -214,6 +243,92 @@ function streak() {
   let n = 0; while (set.has(dateKey(d))) { n++; d.setDate(d.getDate() - 1); }
   return n;
 }
+/* ---------- Juego: diarias, cofres, monedas, ánimo de AXIS y jefes ---------- */
+const hash = str => [...str].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
+const dayOf = (s, date = today()) => (s.daily[date] = s.daily[date] || {});
+function chestTotals() {
+  return Object.values(S.daily).reduce((t, d) => (d.chest ? { xp: t.xp + d.chest.xp, coins: t.coins + d.chest.coins } : t), { xp: 0, coins: 0 });
+}
+/** Apunta que hoy se ha avanzado (o deshecho) algo en una campaña: alimenta las diarias y el ánimo. */
+function logActivity(s, cid, delta) {
+  const day = (s.activity[today()] = s.activity[today()] || {});
+  day[cid] = Math.max(0, (day[cid] || 0) + delta);
+}
+
+/** Las 3 misiones de un día: entrenar, avanzar en una campaña y un hábito, siempre las mismas para esa fecha. */
+function dailyQuests(date = today()) {
+  const seed = hash(date), quests = [];
+  const body = S.campaigns.find(c => c.tracker === 'body');
+  if (body) quests.push({ key: 'train', kind: 'train' });
+  const open = S.campaigns.filter(c => c.tracker !== 'body' && campaignProgress(c) < 1);
+  if (open.length) { const c = open[seed % open.length]; quests.push({ key: 'adv:' + c.id, kind: 'advance', cid: c.id }); }
+  const pool = HABITS.map(h => ({ key: h.key, kind: 'habit', label: h.label }));
+  if (body && S.weight.goal != null) pool.push({ key: 'weigh', kind: 'weigh' });
+  let n = seed;
+  while (quests.length < 3 && pool.length) { quests.push(pool.splice(n % pool.length, 1)[0]); n = Math.floor(n / 7) + 3; }
+  return quests;
+}
+function questDone(q, date = today()) {
+  switch (q.kind) {
+    case 'train': return S.train.includes(date);
+    case 'advance': return ((S.activity[date] || {})[q.cid] || 0) > 0;
+    case 'weigh': return S.weight.log.some(p => p.d === date);
+    default: return !!((S.daily[date] || {}).habits || {})[q.key];
+  }
+}
+function questText(q) {
+  if (q.kind === 'train') return { title: 'Entrena hoy', sub: 'Una rutina, correr o comba: lo que te apetezca' };
+  if (q.kind === 'weigh') return { title: 'Pésate', sub: 'Apúntalo en Físico' };
+  if (q.kind === 'advance') {
+    const c = findCampaign(q.cid), l = c && c.levels[currentLevelIndex(c)], next = l && l.missions.find(m => !isDone(m));
+    return { title: `Avanza en ${c ? c.name : 'una campaña'}`, sub: next ? `Por ejemplo: ${next.name}` : 'Marca cualquier misión' };
+  }
+  return { title: q.label, sub: 'Márcalo tú cuando lo hagas' };
+}
+
+// Monedas: se ganan jugando y se gastan en la tienda
+function coinsEarned() {
+  const fromMissions = allMissions().filter(isDone).reduce((a, m) => a + Math.round(m.xp * COINS.missionShare), 0);
+  return fromMissions + S.train.length * COINS.train + totalRecords() * COINS.record + chestTotals().coins;
+}
+const chestReady = () => !(S.daily[today()] || {}).chest && dailyQuests().every(q => questDone(q));
+const coinsSpent = () => S.purchases.reduce((a, p) => a + p.cost, 0);
+const coins = () => Math.max(0, coinsEarned() - coinsSpent());
+
+// Ánimo de AXIS según lo que has hecho estos días
+function activeDays() {
+  const days = new Set([...S.train, ...S.weight.log.map(p => p.d), ...S.sessions.map(x => x.d)]);
+  Object.entries(S.activity).forEach(([d, v]) => { if (Object.values(v).some(n => n > 0)) days.add(d); });
+  Object.entries(S.daily).forEach(([d, v]) => { if (v.chest || Object.values(v.habits || {}).some(Boolean)) days.add(d); });
+  return days;
+}
+function mood() {
+  const days = activeDays(), t = today(), d = new Date();
+  const activeToday = days.has(t);
+  if (!activeToday) d.setDate(d.getDate() - 1);
+  let run = 0; while (days.has(dateKey(d))) { run++; d.setDate(d.getDate() - 1); }
+  const last = [...days].sort().pop();
+  const idle = last ? Math.round((new Date(t + 'T12:00') - new Date(last + 'T12:00')) / 864e5) : null;
+  const quests = dailyQuests(), left = quests.filter(q => !questDone(q)).length, chest = (S.daily[t] || {}).chest;
+  if (activeToday && chest) return { kind: 'proud', line: run >= 2 ? `Cofre abierto y ${run} días seguidos. Así sí.` : 'Cofre de hoy abierto. Mañana más.' };
+  if (activeToday && run >= 3) return { kind: 'fire', line: `${run} días seguidos. ${left ? `Te ${left === 1 ? 'queda 1 misión' : 'quedan ' + left + ' misiones'} para el cofre.` : 'Abre el cofre.'}` };
+  if (activeToday) return { kind: 'happy', line: left ? `Buen arranque. Te ${left === 1 ? 'queda 1 misión' : 'quedan ' + left + ' misiones'} para el cofre.` : '¡Las 3 hechas! Abre el cofre.' };
+  if (idle != null && idle >= 2) return { kind: 'tired', line: `Llevamos ${idle} días parados… Una misión pequeña y arrancamos.` };
+  if (run >= 2) return { kind: 'idle', line: `Racha de ${run} días en juego. Haz una misión hoy y la salvas.` };
+  return { kind: 'idle', line: idle === 1 ? 'Ayer bien. ¿Seguimos hoy?' : '¿Empezamos? Tus misiones de hoy están aquí abajo.' };
+}
+const wearing = () => ITEMS.filter(i => i.wearable && levelOf(totalXP()) >= i.level && !S.unequipped.includes(i.key)).map(i => i.key);
+
+// Jefe final: el último nivel de cada campaña; los niveles anteriores le quitan vida
+function boss(c) {
+  if (c.levels.length < 2) return null;
+  const last = c.levels[c.levels.length - 1], before = c.levels.slice(0, -1).flatMap(l => l.missions);
+  if (!before.length) return null;
+  const hp = 1 - avg(before), defeated = last.missions.length > 0 && levelProgress(last) >= 1;
+  const left = before.filter(m => !isDone(m)).length;
+  return { level: last, hp: defeated ? 0 : hp, defeated, left, target: (last.missions.find(m => !isDone(m)) || last.missions[0] || {}).name };
+}
+
 function weekDays() {
   const now = new Date(), dow = (now.getDay() + 6) % 7, monday = new Date(now);
   monday.setDate(now.getDate() - dow);
@@ -365,10 +480,11 @@ document.addEventListener('focusout', () => setTimeout(() => {
 
 /** Única puerta para cambiar datos: aplica el cambio, guarda, repinta y premia. */
 function update(change, { reward = true } = {}) {
-  const before = totalXP();
+  const before = totalXP(), readyBefore = chestReady();
   change(S);
   persist();
   render();
+  if (!readyBefore && chestReady()) setTimeout(() => toast('¡Cofre del día listo! Ábrelo en Inicio'), reward ? 2000 : 0);
   if (!reward) return;
   const after = totalXP();
   if (after > before) toast(`+${after - before} XP`);
@@ -405,14 +521,34 @@ function viewAccount() {
     </form>
     <p class="hint">Usa la misma cuenta en el móvil y en el PC. Al entrar se junta lo de este dispositivo con lo de tu cuenta.</p></section>`;
 }
+function viewAxis(state) {
+  const layers = [AXIS_LAYERS.base, ...wearing().map(k => AXIS_LAYERS[k])];
+  if (state === 'tired') layers.push(AXIS_LAYERS.eyesClosed);
+  return `<div class="char mood-${state}" aria-hidden="true">${layers.map(src => `<img src="${src}" alt="">`).join('')}${state === 'tired' ? '<span class="zzz">z<b>z</b></span>' : ''}</div>`;
+}
+const coinBadge = n => `<span class="coins num"><img src="${IMG.coin}" alt="">${n}</span>`;
 function viewHero() {
-  const xp = totalXP(), L = levelOf(xp), from = xpForLevel(L), to = xpForLevel(L + 1), p = (xp - from) / (to - from);
-  return html`<section class="hero"><img class="char" src="${IMG.hero}" alt="AXIS en pixel art">
+  const xp = totalXP(), L = levelOf(xp), from = xpForLevel(L), to = xpForLevel(L + 1), p = (xp - from) / (to - from), m = mood();
+  return html`<section class="hero">${viewAxis(m.kind)}
     <div class="hero-txt"><img class="logo" src="${IMG.logo}" alt="AXIS">
       <span class="pill">${GLYPH.star}Nivel ${L}</span><h1>${rankFor(L)}</h1>
       <div class="xpbar" role="progressbar" aria-valuenow="${pct(p)}" aria-valuemin="0" aria-valuemax="100" aria-label="Progreso al siguiente nivel"><i style="width:${p * 100}%"></i></div>
       <small class="num">${xp} XP · faltan ${to - xp} para el nivel ${L + 1}</small></div>
-    <div class="hero-stats"><span class="num">${allMissions().filter(isDone).length}/${allMissions().length} misiones</span><span class="num">${S.train.length} ${S.train.length === 1 ? 'entreno' : 'entrenos'}</span></div></section>`;
+    <p class="say mood-${m.kind}">${esc(m.line)}</p>
+    <div class="hero-stats"><button class="coins-btn" data-act="open" data-id="shop" aria-label="Ir a la tienda">${coinBadge(coins())}</button></div></section>`;
+}
+function viewDaily() {
+  const quests = dailyQuests(), done = quests.filter(q => questDone(q)).length, chest = (S.daily[today()] || {}).chest, ready = done === quests.length && !chest;
+  return html`<section class="daily"><div class="edit-row spread"><h2 class="sec-t">Misiones de hoy</h2><span class="label num">${done}/${quests.length}</span></div>
+    <ul class="quests">${quests.map(q => {
+      const ok = questDone(q), t = questText(q);
+      const act = q.kind === 'habit' ? `data-act="toggleHabit" data-k="${q.key}"` : q.kind === 'advance' ? `data-act="open" data-id="${q.cid}"` : 'data-act="open" data-id="fisico"';
+      return `<li><button class="quest ${ok ? 'done' : ''}" ${act}><span class="check">${GLYPH.check}</span><span class="txt"><b>${esc(t.title)}</b><small>${esc(t.sub)}</small></span>${q.kind === 'habit' ? '' : `<span class="go">${GLYPH.chev}</span>`}</button></li>`;
+    })}</ul>
+    <div class="chest ${ready ? 'ready' : chest ? 'opened' : ''}"><img src="${chest ? IMG.chestOpen : IMG.chest}" alt="">
+      <div class="txt">${chest ? `<b>Cofre abierto</b><small class="num">+${chest.coins} monedas · +${chest.xp} XP${chest.gold ? ' · ¡dorado!' : ''}</small>`
+        : ready ? '<b>¡Cofre listo!</b><small>Has hecho las 3. Ábrelo.</small>' : `<b>Cofre del día</b><small>Completa las 3 misiones para abrirlo</small>`}</div>
+      ${when(ready, '<button class="btn dark" data-act="openChest">Abrir</button>')}</div></section>`;
 }
 function viewWeek() {
   const trained = new Set(S.train), names = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'], days = weekDays();
@@ -428,11 +564,14 @@ function viewCampaignCard(c) {
     <span class="big num">${pct(p)}%</span>${bar(p)}</button>`;
 }
 function viewInventory() {
-  const L = levelOf(totalXP()), got = ITEMS.filter(i => L >= i.level).length;
+  const L = levelOf(totalXP()), got = ITEMS.filter(i => L >= i.level).length, worn = wearing();
   return html`<section class="inv"><h3>Inventario <span>${got}/${ITEMS.length} objetos</span></h3><div class="items">${ITEMS.map(i => {
-    const ok = L >= i.level;
-    return `<div class="item ${ok ? 'got' : 'locked'}" title="${ok ? i.name : 'Se desbloquea en el nivel ' + i.level}"><img src="${IMG[i.key]}" alt="${ok ? i.name : ''}"><small>${ok ? i.name : 'Nv ' + i.level}</small></div>`;
-  })}</div></section>`;
+    const ok = L >= i.level, on = worn.includes(i.key);
+    const inner = `<img src="${IMG[i.key]}" alt="">${when(on, '<em>Puesto</em>')}<small>${ok ? i.name : 'Nv ' + i.level}</small>`;
+    return ok && i.wearable
+      ? `<button class="item got ${on ? 'on' : ''}" data-act="toggleWear" data-k="${i.key}" aria-pressed="${on}" aria-label="${on ? 'Quitar' : 'Poner'} ${i.name}">${inner}</button>`
+      : `<div class="item ${ok ? 'got' : 'locked'}" title="${ok ? i.name : 'Se desbloquea en el nivel ' + i.level}">${inner}</div>`;
+  })}</div><p class="hint inv-hint">Cascos, llavero, handycam y skate se los pone AXIS. Tócalos para ponérselos o quitárselos.</p></section>`;
 }
 function viewNewCampaign() {
   return html`<section class="panel"><h3>Nueva campaña</h3>
@@ -443,13 +582,13 @@ function viewNewCampaign() {
     <p class="hint">Se crea con un nivel vacío y la abres en modo edición para añadir misiones.</p></section>`;
 }
 function viewHome() {
-  return viewHero() + viewWeek() + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
+  return viewHero() + viewDaily() + viewWeek() + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
     <button class="cc add" data-act="toggleNewCampaign">${GLYPH.plus}Nueva campaña</button></div></section>`
     + when(ui.addingCampaign, viewNewCampaign()) + viewInventory();
 }
 function viewNav() {
   const item = (id, label, icon) => `<button data-act="open" data-id="${id}" aria-label="${esc(label)}" ${ui.view === id ? 'aria-current="page"' : ''}>${icon}</button>`;
-  return item('home', 'Inicio', GLYPH.home) + S.campaigns.map(c => item(c.id, c.name, ICONS[c.icon] || ICONS.star)).join('');
+  return item('home', 'Inicio', GLYPH.home) + item('shop', 'Tienda', GLYPH.bag) + S.campaigns.map(c => item(c.id, c.name, ICONS[c.icon] || ICONS.star)).join('');
 }
 
 // --- Físico
@@ -613,6 +752,40 @@ function viewMap(c) {
   return html`<section class="stack"><div class="edit-row spread"><h2 class="sec-t">Niveles</h2>${when(ui.editing, '<button class="btn" data-act="addLevel">+ Nivel</button>')}</div>
     <div class="map">${c.levels.map((l, i) => viewLevel(c, l, i, current))}</div></section>`;
 }
+function viewBoss(c) {
+  const b = boss(c);
+  if (!b) return '';
+  const hp = Math.round(b.hp * 100), weak = !b.defeated && hp === 0;
+  const msg = b.defeated ? 'Derrotado. Campaña superada.'
+    : weak ? 'Sin vida. Ahora te toca rematarlo en el último nivel.'
+    : `Cada misión de los niveles anteriores le quita vida. ${b.left === 1 ? 'Queda 1' : 'Quedan ' + b.left}.`;
+  return html`<section class="boss ${b.defeated ? 'defeated' : ''} ${weak ? 'weak' : ''} ${ui.bossHit === c.id ? 'hit' : ''}">
+    <img src="${IMG.boss}" alt="">
+    <div class="txt"><span class="label">${esc(b.level.name)}</span><b>${esc(b.target || 'El jefe')}</b>
+      <div class="hp" role="meter" aria-valuenow="${hp}" aria-valuemin="0" aria-valuemax="100" aria-label="Vida del jefe"><i style="width:${hp}%"></i></div>
+      <small class="num">${b.defeated ? '' : `HP ${hp}/100 · `}${msg}</small></div></section>`;
+}
+function viewShop() {
+  const have = coins(), recent = S.purchases.slice(-6).reverse();
+  return html`<section class="c-hero shop-hero"><span class="pill">${GLYPH.bag}Tienda</span>
+    <h2>Tus recompensas</h2><p>Canjea monedas por premios de verdad. Los pones tú.</p>
+    <div class="row"><span class="big num coins-big"><img src="${IMG.coin}" alt="">${have}</span>
+      <button class="btn dark" data-act="toggleEditing">${ui.editing ? 'Listo' : 'Editar'}</button></div></section>
+    <section class="panel"><h3>Premios</h3>
+      <ul class="rewards">${S.rewards.map(r => {
+        const can = have >= r.cost, armed = ui.armed === 'buy:' + r.id;
+        return `<li class="reward ${can ? 'can' : ''}"><div class="txt"><b>${esc(r.name)}</b>${coinBadge(r.cost)}</div>
+          ${ui.editing ? confirmBtn('deleteReward', r.id, 'Borrar')
+            : can ? `<button class="btn ${armed ? 'primary' : ''}" data-act="buyReward" data-id="${r.id}">${armed ? '¿Canjear?' : 'Canjear'}</button>`
+            : `<span class="need num">Te faltan ${r.cost - have}</span>`}</li>`;
+      })}${when(!S.rewards.length, '<li><small class="hint">Añade tu primer premio.</small></li>')}</ul>
+      ${ui.addingReward || ui.editing ? html`<form class="adde" data-form="addReward"><input name="n" placeholder="Premio (ej: Zapatillas nuevas)" maxlength="60" required aria-label="Premio">
+        <input name="c" type="number" inputmode="numeric" min="10" max="99999" step="10" value="300" aria-label="Precio en monedas" style="width:96px"><button class="btn primary">Añadir</button></form>`
+        : '<button class="btn add-ex" data-act="addRewardForm">+ Premio</button>'}
+      <p class="hint">Ganas monedas con cada misión (la mitad de su XP), cada entreno (+${COINS.train}), cada récord (+${COINS.record}) y el cofre diario.</p></section>
+    ${when(recent.length, html`<section class="panel"><h3>Canjeado</h3><ul class="hist">${recent.map(p =>
+      `<li><b>${esc(p.name)}</b><span class="num">${shortDate(p.d)} · ${p.cost}</span>${when(ui.editing, confirmBtn('deletePurchase', p.id, 'Devolver'))}</li>`)}</ul></section>`)}`;
+}
 function viewCampaign(c) {
   const p = campaignProgress(c), inSession = c.tracker === 'body' && sessionOpen();
   return html`<section class="c-hero" style="background:${colorVar(c)}"><span class="ico">${ICONS[c.icon] || ICONS.star}</span>
@@ -621,14 +794,14 @@ function viewCampaign(c) {
     <div class="row"><span class="big num">${pct(p)}%</span>
       <div class="edit-row">${when(ui.editing && S.campaigns.length > 1, `<button class="btn danger on-color" data-act="deleteCampaign">${ui.armed === c.id ? '¿Borrar campaña?' : 'Borrar'}</button>`)}<button class="btn dark" data-act="toggleEditing">${ui.editing ? 'Listo' : 'Editar'}</button></div></div>
     ${bar(p)}</section>
-    ${when(c.tracker === 'body', viewBody())}${when(!inSession, viewMap(c))}`;
+    ${when(!inSession, viewBoss(c))}${when(c.tracker === 'body', viewBody())}${when(!inSession, viewMap(c))}`;
 }
 
 function render() {
   const campaign = S.campaigns.find(c => c.id === ui.view);
-  if (!campaign) ui.view = 'home';
+  if (!campaign && ui.view !== 'shop') ui.view = 'home';
   const y = window.scrollY;
-  document.getElementById('app').innerHTML = viewTop() + viewAccount() + (campaign ? viewCampaign(campaign) : viewHome())
+  document.getElementById('app').innerHTML = viewTop() + viewAccount() + (campaign ? viewCampaign(campaign) : ui.view === 'shop' ? viewShop() : viewHome())
     + `<datalist id="ex-list">${COMMON_EXERCISES.map(n => `<option value="${n}">`).join('')}</datalist>`;
   document.getElementById('nav').innerHTML = viewNav();
   window.scrollTo(0, y);
@@ -642,11 +815,20 @@ function toast(msg) {
   t.textContent = msg; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1900);
 }
+function showChest(chest) {
+  const el = document.createElement('div');
+  el.className = 'lvlup chest-pop';
+  el.innerHTML = html`<div class="${chest.gold ? 'gold' : ''}"><span class="pill">${GLYPH.star}${chest.gold ? '¡Cofre dorado!' : 'Cofre del día'}</span>
+    <img src="${IMG.chestOpen}" alt=""><div class="loot"><span class="num">+${chest.coins}</span><img src="${IMG.coin}" alt="monedas"></div>
+    <p class="hint on-lilac num">+${chest.xp} XP · Vuelve mañana a por otro</p><button class="btn dark wide">Genial</button></div>`;
+  el.addEventListener('click', () => el.remove());
+  document.body.appendChild(el);
+}
 function showLevelUp(L) {
   const item = ITEMS.find(i => i.level === L), el = document.createElement('div');
   el.className = 'lvlup';
   el.innerHTML = html`<div><span class="pill">${GLYPH.star}Subes de nivel</span><div class="big">${L}</div><h2>${rankFor(L)}</h2>
-    ${item ? `<img src="${IMG[item.key]}" alt=""><p class="hint on-lilac">Desbloqueas: <b>${item.name}</b></p>` : ''}
+    ${item ? `<img src="${IMG[item.key]}" alt=""><p class="hint on-lilac">Desbloqueas: <b>${item.name}</b>${item.wearable ? '. AXIS ya lo lleva puesto.' : ''}</p>` : ''}
     <button class="btn dark wide">Seguir</button></div>`;
   el.addEventListener('click', () => el.remove());
   document.body.appendChild(el);
@@ -667,6 +849,16 @@ function confirmTwice(id, change) {
   else { ui.armed = id; render(); }
 }
 const repaint = fn => (...args) => { fn(...args); render(); };
+/** Cambia una misión y, si le quita vida al jefe de su campaña, lo enseña. */
+function hitBoss(el, change) {
+  const { c } = findMission(el), before = boss(c);
+  update(change);
+  const after = boss(c);
+  if (!before || !after || after.defeated || after.hp >= before.hp - 0.001) return;
+  ui.bossHit = c.id; render();
+  setTimeout(() => toast(`−${Math.round((before.hp - after.hp) * 100)} HP al jefe`), 1900);
+  setTimeout(() => { ui.bossHit = null; render(); }, 700);
+}
 
 const actions = {
   syncInfo: repaint(() => { ui.account = !ui.account; }),
@@ -680,14 +872,39 @@ const actions = {
     if (error) { toast(authError(error)); return; }
     if (!data.session) toast('Revisa tu correo para confirmar la cuenta y luego dale a Entrar');
   },
-  open: el => { ui.view = el.dataset.id; ui.addingCampaign = false; ui.editing = false; ui.exForm = null; render(); window.scrollTo(0, 0); },
+  open: el => { ui.view = el.dataset.id; ui.addingCampaign = false; ui.editing = false; ui.exForm = null; ui.addingReward = false; render(); window.scrollTo(0, 0); },
   toggleEditing: repaint(() => { ui.editing = !ui.editing; }),
   toggleLevel: el => { const card = el.closest('.lv-card'); ui.open[el.dataset.k] = card.dataset.open !== '1'; render(); },
 
   // Misiones
-  toggleMission: el => update(() => { const { m } = findMission(el); m.done = !m.done; m.doneAt = m.done ? Date.now() : null; }),
-  increment: el => update(() => { const { m } = findMission(el); if (m.count < m.target) { m.count++; if (m.count >= m.target) m.doneAt = Date.now(); } }),
-  decrement: el => update(() => { const { m } = findMission(el); if (m.count > 0) m.count--; }),
+  toggleMission: el => hitBoss(el, s => { const { c, m } = findMission(el); m.done = !m.done; m.doneAt = m.done ? Date.now() : null; logActivity(s, c.id, m.done ? 1 : -1); }),
+  increment: el => hitBoss(el, s => { const { c, m } = findMission(el); if (m.count < m.target) { m.count++; logActivity(s, c.id, 1); if (m.count >= m.target) m.doneAt = Date.now(); } }),
+  decrement: el => hitBoss(el, s => { const { c, m } = findMission(el); if (m.count > 0) { m.count--; logActivity(s, c.id, -1); } }),
+
+  // Diarias, cofre, tienda e inventario
+  toggleHabit: el => update(s => { const day = dayOf(s), h = (day.habits = day.habits || {}); h[el.dataset.k] = !h[el.dataset.k]; }),
+  openChest: () => {
+    const quests = dailyQuests();
+    if (!quests.every(q => questDone(q)) || (S.daily[today()] || {}).chest) return;
+    const gold = Math.random() < 0.15, chest = { coins: (30 + Math.floor(Math.random() * 31)) * (gold ? 2 : 1), xp: gold ? 50 : 25, gold };
+    update(s => { dayOf(s).chest = chest; });
+    showChest(chest);
+  },
+  toggleWear: el => update(s => {
+    const k = el.dataset.k;
+    s.unequipped = s.unequipped.includes(k) ? s.unequipped.filter(x => x !== k) : [...s.unequipped, k];
+  }, { reward: false }),
+  buyReward: el => {
+    const r = S.rewards.find(x => x.id === el.dataset.id);
+    if (!r || coins() < r.cost) return;
+    if (ui.armed !== 'buy:' + r.id) { ui.armed = 'buy:' + r.id; render(); return; }
+    ui.armed = null;
+    update(s => s.purchases.push({ id: uid(), rewardId: r.id, name: r.name, cost: r.cost, d: today() }), { reward: false });
+    toast(`¡Disfrútalo! −${r.cost} monedas`);
+  },
+  addRewardForm: repaint(() => { ui.addingReward = true; }),
+  deleteReward: el => confirmTwice(el.dataset.id, s => { s.rewards = s.rewards.filter(x => x.id !== el.dataset.id); }),
+  deletePurchase: el => confirmTwice(el.dataset.id, s => { s.purchases = s.purchases.filter(x => x.id !== el.dataset.id); }),
   deleteMission: el => { const { l, m } = findMission(el); confirmTwice(m.id, () => { l.missions = l.missions.filter(x => x !== m); }); },
   addLevel: () => { const c = activeCampaign(), l = level(`Nivel ${c.levels.length + 1}`, []); ui.open[c.id + l.id] = true; update(() => c.levels.push(l), { reward: false }); },
   deleteLevel: (el, ev) => { ev.preventDefault(); const c = findCampaign(el.dataset.c); confirmTwice(el.dataset.id, () => { c.levels = c.levels.filter(x => x.id !== el.dataset.id); }); },
@@ -811,6 +1028,19 @@ function mergeProgress(cur, inc) {
   });
   cur.routines = routines;
   cur.sessions = [...sessions.values()].sort((a, b) => a.d.localeCompare(b.d));
+  // Diarias, actividad y tienda
+  Object.entries(inc.daily).forEach(([d, v]) => {
+    const day = (cur.daily[d] = cur.daily[d] || {});
+    day.habits = Object.assign({}, v.habits, day.habits);
+    Object.keys(v.habits || {}).forEach(k => { if (v.habits[k]) day.habits[k] = true; });
+    day.chest = day.chest || v.chest;
+  });
+  Object.entries(inc.activity).forEach(([d, v]) => {
+    const day = (cur.activity[d] = cur.activity[d] || {});
+    Object.entries(v).forEach(([cid, n]) => { day[cid] = Math.max(day[cid] || 0, n); });
+  });
+  inc.rewards.forEach(r => { if (!cur.rewards.some(x => x.id === r.id || x.name === r.name)) cur.rewards.push(r); });
+  inc.purchases.forEach(p => { if (!cur.purchases.some(x => x.id === p.id)) cur.purchases.push(p); });
   // Campañas: misiones emparejadas por nivel y nombre
   inc.campaigns.forEach(ic => {
     const c = cur.campaigns.find(x => x.id === ic.id || x.name === ic.name);
@@ -829,6 +1059,13 @@ function mergeProgress(cur, inc) {
   return cur;
 }
 const forms = {
+  addReward: (f, F) => {
+    const name = F.n.value.trim(), cost = Math.max(10, Math.round(num(F.c.value) || 0));
+    if (!name || !cost) return;
+    ui.addingReward = false;
+    update(s => s.rewards.push(reward(name, cost)), { reward: false });
+    toast('Premio añadido');
+  },
   signIn: async (f, F) => {
     const { error } = await cloud.client.auth.signInWithPassword({ email: F.email.value.trim(), password: F.password.value });
     if (error) toast(authError(error)); else toast('Conectado. Sincronizando…');
