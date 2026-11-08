@@ -20,8 +20,6 @@ const IMG = {
   "coin": "assets/moneda.png",
   "boss": "assets/jefe.png"
 };
-// AXIS por capas: la base y lo que lleva puesto se apilan en la misma caja
-const AXIS_LAYERS = { base: 'assets/axis/base.png', eyesClosed: 'assets/axis/ojos.png', llavero: 'assets/axis/llavero.png', auriculares: 'assets/axis/auriculares.png', handycam: 'assets/axis/handycam.png', skate: 'assets/axis/skate.png' };
 
 const svg = (paths, attrs = '') =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${attrs}>${paths}</svg>`;
@@ -60,7 +58,7 @@ const ITEMS = [
   { key: 'mechero', name: 'Mechero', level: 6 },
   { key: 'handycam', name: 'Handycam', level: 7, wearable: true },
   { key: 'skate', name: 'Skate', level: 8, wearable: true },
-  { key: 'hero', name: 'AXIS', level: 10 },
+  { key: 'chestOpen', name: 'Cofre de oro', level: 10 },
 ];
 const XP = { train: 5, record: 10 };
 const COINS = { train: 3, record: 5, missionShare: 0.5 };
@@ -99,6 +97,11 @@ const today = () => dateKey(new Date());
 const shortDate = key => new Date(key + 'T12:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
 const pct = p => Math.round(p * 100);
 const colorVar = c => `var(--${c.color || 'lilac'})`;
+// Color del jugador: cualquier color (hex). Los nombres antiguos se traducen.
+const NAMED_COLORS = { lilac: '#C7B5FF', orange: '#FFB547', blue: '#8C9EFF', lime: '#C5E86C', pink: '#FF8AD0', red: '#E5483C' };
+const colorHex = c => (NAMED_COLORS[c] || (/^#[0-9a-f]{6}$/i.test(c || '') ? c : '#C7B5FF'));
+const inkFor = hex => { const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.32 ? '#111111' : '#FFFFFF'; };
 const rankFor = L => RANKS[Math.min(L - 1, RANKS.length - 1)];
 const storage = {
   get(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } },
@@ -149,7 +152,7 @@ const defaultRewards = () => [
 ];
 // Premios de ejemplo de la versión anterior: si siguen sin tocar, se cambian por los nuevos
 const OLD_REWARDS = ['Un café o un snack fuera', 'Tarde de videojuegos o serie', 'Un día libre de entreno sin culpa', 'Cena fuera o pedir comida', 'Un capricho (ropa, algo para el skate…)'];
-const defaultState = () => ({ v: 5, name: '', onboarded: false, color: 'lilac', xpDays: {}, weight: { start: null, goal: null, log: [] }, train: [], sessions: [], routines: defaultRoutines(), campaigns: defaultCampaigns(),
+const defaultState = () => ({ v: 5, name: '', onboarded: false, color: '#C7B5FF', look: Character.randomLook(), photo: null, xpDays: {}, weight: { start: null, goal: null, log: [] }, train: [], sessions: [], routines: defaultRoutines(), campaigns: defaultCampaigns(),
   daily: {}, activity: {}, rewards: defaultRewards(), purchases: [], unequipped: [] });
 
 /** Pone al día datos guardados por versiones anteriores. */
@@ -173,7 +176,10 @@ function migrate(s) {
   if ((s.v || 0) < 5 && s.rewards.every(r => OLD_REWARDS.includes(r.name))) s.rewards = defaultRewards();
   // Perfil para el ranking: nombre, color y XP por día (para la liga semanal)
   if (s.onboarded === undefined) s.onboarded = !!s.name;
-  s.color = s.color || 'lilac'; s.xpDays = s.xpDays || {};
+  s.color = colorHex(s.color); s.xpDays = s.xpDays || {};
+  // Personaje propio: quien ya jugaba antes era AXIS
+  if (!s.look) s.look = s.onboarded ? Object.assign({}, Character.AXIS) : Character.randomLook();
+  if (s.photo === undefined) s.photo = null;
   s.v = 5;
   return s;
 }
@@ -187,7 +193,7 @@ const ui = {
   addingCampaign: false, newIcon: 'star', newColor: 'pink',
   draft: storage.get(STORAGE.draft), sync: 'local', exForm: null, account: false,
   addingReward: false, bossHit: null,
-  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false },
+  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false }, profileExtras: true,
 };
 
 /* =========================================================
@@ -448,20 +454,23 @@ async function push() {
 }
 
 /* ---------- Ranking: cada uno publica su perfil y todos ven la tabla ---------- */
+const missingColumn = e => e && (e.code === 'PGRST204' || e.code === '42703' || /column/i.test(e.message || ''));
 const missingTable = e => e && (e.code === '42P01' || e.code === 'PGRST205' || /does not exist|schema cache/i.test(e.message || ''));
 async function publishProfile() {
   if (!cloud.user || !S.onboarded || !S.name) return;
   const xp = totalXP();
-  const { error } = await cloud.client.from('profiles').upsert({
-    user_id: cloud.user.id, name: S.name.slice(0, 24), color: S.color, level: levelOf(xp), xp,
-    week: mondayKey(), week_xp: weekXP(), streak: activeStreak(), chests_week: chestsThisWeek(), updated_at: new Date().toISOString(),
-  });
+  const row = { user_id: cloud.user.id, name: S.name.slice(0, 24), color: S.color, level: levelOf(xp), xp,
+    week: mondayKey(), week_xp: weekXP(), streak: activeStreak(), chests_week: chestsThisWeek(), updated_at: new Date().toISOString() };
+  let { error } = await cloud.client.from('profiles').upsert(ui.profileExtras ? Object.assign({ photo: S.photo, look: S.look }, row) : row);
+  if (error && missingColumn(error)) { ui.profileExtras = false; ({ error } = await cloud.client.from('profiles').upsert(row)); render(); }
   if (missingTable(error)) { ui.rankingState = 'missing'; render(); }
 }
 let rankingTimer = null;
 async function loadRanking() {
   if (!cloud.user) return;
-  const { data, error } = await cloud.client.from('profiles').select('user_id,name,color,level,xp,week,week_xp,streak,chests_week').limit(200);
+  const cols = 'user_id,name,color,level,xp,week,week_xp,streak,chests_week';
+  let { data, error } = await cloud.client.from('profiles').select(ui.profileExtras ? cols + ',photo,look' : cols).limit(200);
+  if (error && missingColumn(error)) { ui.profileExtras = false; ({ data, error } = await cloud.client.from('profiles').select(cols).limit(200)); }
   if (error) { ui.rankingState = missingTable(error) ? 'missing' : 'error'; render(); return; }
   ui.ranking = data; ui.rankingState = 'ok';
   if (!isTyping()) render();
@@ -476,7 +485,7 @@ function listenRanking() {
 function rankedPlayers(tab = ui.rankTab) {
   const monday = mondayKey();
   const rows = (ui.ranking || []).map(r => (r.user_id === (cloud.user && cloud.user.id)
-    ? { ...r, name: S.name, color: S.color, level: levelOf(totalXP()), xp: totalXP(), week: monday, week_xp: weekXP(), streak: activeStreak(), chests_week: chestsThisWeek(), me: true }
+    ? { ...r, name: S.name, color: S.color, photo: S.photo, look: S.look, level: levelOf(totalXP()), xp: totalXP(), week: monday, week_xp: weekXP(), streak: activeStreak(), chests_week: chestsThisWeek(), me: true }
     : { ...r, week_xp: r.week === monday ? r.week_xp : 0, chests_week: r.week === monday ? r.chests_week : 0 }));
   const score = r => (tab === 'week' ? r.week_xp : r.xp);
   return rows.sort((a, b) => score(b) - score(a) || b.streak - a.streak);
@@ -508,7 +517,8 @@ function listenRemote() {
 async function mergeWithCloud() {
   const { data, error } = await cloud.client.from('saves').select('state').eq('user_id', cloud.user.id).maybeSingle();
   if (error) { setSync('error'); return; }
-  if (data && data.state) { S = stamp(S) ? mergeProgress(migrate(data.state), S) : migrate(data.state); render(); }
+  // Un dispositivo sin estrenar (sin bienvenida hecha) no aporta nada: se queda tal cual la cuenta
+  if (data && data.state) { S = stamp(S) && S.onboarded ? mergeProgress(migrate(data.state), S) : migrate(data.state); render(); }
   persist();
 }
 async function startSync(user, { fresh = false } = {}) {
@@ -570,7 +580,7 @@ const bar = (p, cls = 'bar') => `<div class="${cls}"><i style="width:${p * 100}%
 
 function viewTop() {
   const d = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' });
-  return html`<header class="top"><div class="avatar"><img src="${IMG.face}" alt="AXIS"></div>
+  return html`<header class="top"><button class="avatar" data-act="open" data-id="profile" aria-label="Tu perfil"><img src="${S.photo || Character.face(S.look)}" alt="" class="${S.photo ? 'photo' : ''}"></button>
     <div class="hello"><b>Hola, ${esc(S.name)}</b><span>${esc(d[0].toUpperCase() + d.slice(1))}</span></div>
     <button class="sync" id="sync" data-s="${ui.sync}" title="${SYNC_LABEL[ui.sync]}" aria-label="${SYNC_LABEL[ui.sync]}" data-act="syncInfo"><i></i></button></header>`;
 }
@@ -579,8 +589,7 @@ function viewAccount() {
   if (ui.sync === 'off') return html`<section class="panel"><h3>Sincronización</h3><p class="hint">Falta configurar Supabase. Mientras tanto, todo se guarda en este dispositivo.</p></section>`;
   if (cloud.user) return html`<section class="panel"><h3>Tu cuenta <button class="btn ghost" data-act="toggleAccount">Cerrar</button></h3>
     <p class="hint">Conectado como <b>${esc(cloud.user.email || '')}</b>. ${SYNC_LABEL[ui.sync]}.</p>
-    <form class="stack-s" data-form="saveProfile"><label class="fld"><span>Tu nombre en el ranking</span><input name="n" maxlength="24" required value="${esc(S.name)}"></label>
-      ${viewColorPicker(S.color, 'setProfileColor')}<button class="btn">Guardar perfil</button></form>
+    <button class="btn" data-act="open" data-id="profile">Editar perfil y personaje</button>
     <div class="edit-row"><button class="btn" data-act="syncNow">Sincronizar ahora</button><button class="btn danger" data-act="signOut">Cerrar sesión</button></div></section>`;
   return html`<section class="panel"><h3>Tu cuenta <button class="btn ghost" data-act="toggleAccount">Cerrar</button></h3>
     <p class="hint">Sirve para guardar tu progreso, usarlo en el móvil y en el PC, y competir en el ranking.</p>
@@ -591,34 +600,82 @@ function viewAccount() {
     </form>
     <p class="hint">¿Primera vez? Pon tu email y una contraseña nueva y dale a Crear cuenta. Si ya tienes, dale a Entrar.</p></section>`;
 }
-function viewAxis(state) {
-  const layers = [AXIS_LAYERS.base, ...wearing().map(k => AXIS_LAYERS[k])];
-  if (state === 'tired') layers.push(AXIS_LAYERS.eyesClosed);
-  return `<div class="char mood-${state}" aria-hidden="true">${layers.map(src => `<img src="${src}" alt="">`).join('')}${state === 'tired' ? '<span class="zzz">z<b>z</b></span>' : ''}</div>`;
+function viewAxis(state, look = S.look) {
+  const src = Character.image(look, { items: wearing(), closed: state === 'tired' });
+  return `<div class="char mood-${state}" aria-hidden="true"><img src="${src}" alt="">${state === 'tired' ? '<span class="zzz">z<b>z</b></span>' : ''}</div>`;
 }
+const heroStyle = () => { const bg = colorHex(S.color), ink = inkFor(bg); return `style="--hero-bg:${bg};--hero-ink:${ink}" data-ink="${ink === '#111111' ? 'dark' : 'light'}"`; };
 const coinBadge = n => `<span class="coins num"><img src="${IMG.coin}" alt="">${n}</span>`;
-const PLAYER_COLORS = ['lilac', 'orange', 'blue', 'lime', 'pink', 'red'];
-const viewColorPicker = (current, act) => `<div class="swatches" role="radiogroup" aria-label="Tu color">${PLAYER_COLORS.map(k =>
-  `<button type="button" data-act="${act}" data-k="${k}" aria-pressed="${k === current}" aria-label="Color ${k}" style="background:var(--${k})"></button>`).join('')}</div>`;
-const avatar = (name, color) => `<span class="ava" style="background:var(--${esc(color || 'lilac')})">${esc((name || '?').trim().charAt(0).toUpperCase() || '?')}</span>`;
+const PLAYER_COLORS = ['#C7B5FF', '#FFB547', '#8C9EFF', '#C5E86C', '#FF8AD0', '#E5483C', '#7FD8C9', '#1F1F24'];
+/** Muestras de color más un selector libre para cualquier color. */
+const viewColorPicker = (current, act, field = '') => {
+  const cur = colorHex(current), custom = !PLAYER_COLORS.some(c => c.toLowerCase() === cur.toLowerCase());
+  return `<div class="swatches" role="radiogroup" aria-label="Color">${PLAYER_COLORS.map(k =>
+    `<button type="button" data-act="${act}" data-k="${k}" ${field ? `data-f="${field}"` : ''} aria-pressed="${k.toLowerCase() === cur.toLowerCase()}" aria-label="Color ${k}" style="background:${k}"></button>`).join('')}
+    <label class="swatch-custom ${custom ? 'on' : ''}" title="Elegir otro color" style="${custom ? `background:${cur}` : ''}"><input type="color" value="${cur}" data-color-act="${act}" ${field ? `data-f="${field}"` : ''} aria-label="Otro color"><span>+</span></label></div>`;
+};
+function avatar(r) {
+  const bg = colorHex(r.color);
+  if (r.photo) return `<span class="ava" style="background:${bg}"><img src="${esc(r.photo)}" alt=""></span>`;
+  if (r.look) return `<span class="ava pix" style="background:${bg}"><img src="${Character.face(r.look)}" alt=""></span>`;
+  return `<span class="ava" style="background:${bg};color:${inkFor(bg)}">${esc((r.name || '?').trim().charAt(0).toUpperCase() || '?')}</span>`;
+}
 
 function viewOnboarding() {
   const starters = [
     { id: 'fisico', title: 'Físico', sub: 'Peso, entrenos y rutinas con progresión' },
     { id: 'carnet', title: 'Carnet de conducir', sub: 'Del papeleo al examen práctico' },
   ];
-  return html`<section class="hero onb-hero">${viewAxis('happy')}
-    <div class="hero-txt"><img class="logo" src="${IMG.logo}" alt="AXIS"><h1>Modo Campaña</h1>
+  return html`<section class="hero onb-hero" ${heroStyle()}>${viewAxis('happy')}
+    <div class="hero-txt"><h1>Modo Campaña</h1>
       <p class="onb-lead">Tus objetivos como un videojuego. Sube de nivel, abre cofres y compite con tus amigos.</p></div></section>
     <form class="panel onb" data-form="onboard">
       <label class="fld"><span>¿Cómo te llamas?</span><input name="n" maxlength="24" required autocomplete="given-name" placeholder="Tu nombre"></label>
-      <div class="fld"><span>Tu color</span>${viewColorPicker(ui.onbColor || 'lilac', 'pickOnboardColor')}</div>
+      <div class="fld"><span>Tu color</span>${viewColorPicker(S.color, 'setProfileColor')}</div>
       <div class="fld"><span>¿Con qué empiezas?</span><div class="starters">${starters.map(c =>
         `<button type="button" class="starter ${ui.onboardCamps[c.id] ? 'on' : ''}" data-act="toggleStarter" data-k="${c.id}" aria-pressed="${!!ui.onboardCamps[c.id]}"><span class="check">${GLYPH.check}</span><span><b>${c.title}</b><small>${c.sub}</small></span></button>`)}</div>
-        <p class="hint">Luego puedes crear tus propias campañas.</p></div>
+        <p class="hint">Luego puedes crear tus propias campañas. Después te harás tu personaje.</p></div>
       <button class="btn primary wide">Empezar</button>
     </form>
     ${when(ui.sync !== 'off', '<p class="hint center">¿Ya tienes cuenta? <button class="linkbtn" data-act="syncInfo">Entra aquí</button></p>')}`;
+}
+const LOOK_LABELS = { revuelto: 'Revuelto', largo: 'Largo', corto: 'Corto' };
+function viewLookRow(label, field, options, current, custom = false) {
+  return `<div class="look-row"><span class="label">${label}</span><div class="swatches">${options.map(v =>
+    `<button type="button" data-act="setLook" data-f="${field}" data-v="${v}" aria-pressed="${String(current).toLowerCase() === v.toLowerCase()}" aria-label="${label} ${v}" style="background:${v}"></button>`).join('')}
+    ${custom ? `<label class="swatch-custom" title="Otro color"><input type="color" value="${current}" data-color-act="setLook" data-f="${field}" aria-label="Otro color de ${label.toLowerCase()}"><span>+</span></label>` : ''}</div></div>`;
+}
+const chip = (field, value, label, current) => `<button type="button" class="chip-btn" data-act="setLook" data-f="${field}" data-v="${value}" aria-pressed="${String(current) === String(value)}">${label}</button>`;
+function viewProfile() {
+  const L = S.look, O = Character.OPTIONS, xp = totalXP();
+  return html`<section class="c-hero profile-hero" ${heroStyle()}>
+    <div class="me-row"><span class="big-ava">${S.photo ? `<img src="${S.photo}" alt="Tu foto">` : `<img class="pix" src="${Character.face(L)}" alt="">`}</span>
+      <div><h2>${esc(S.name || 'Tu perfil')}</h2><p>Nivel ${levelOf(xp)} · ${rankFor(levelOf(xp))}</p></div></div>
+    <div class="edit-row"><label class="btn dark file-btn">${S.photo ? 'Cambiar foto' : 'Subir foto'}<input type="file" accept="image/*" data-photo hidden></label>
+      ${when(S.photo, '<button class="btn on-color" data-act="removePhoto">Quitar foto</button>')}</div></section>
+    <section class="panel"><h3>Tú</h3>
+      <form class="inrow" data-form="saveProfile"><input name="n" maxlength="24" required value="${esc(S.name)}" aria-label="Tu nombre"><button class="btn">Guardar nombre</button></form>
+      <div class="fld"><span>Tu color: pinta tu tarjeta y tu sitio en el ranking</span>${viewColorPicker(S.color, 'setProfileColor')}</div></section>
+    <section class="panel"><h3>Tu personaje <span class="edit-row"><button class="btn ghost" data-act="lookPreset" data-k="random">Aleatorio</button><button class="btn ghost" data-act="lookPreset" data-k="axis">AXIS</button></span></h3>
+      <div class="look-editor"><div class="look-preview" style="background:${colorHex(S.color)}">${viewAxis('happy')}</div>
+        <div class="look-controls">
+          ${viewLookRow('Piel', 'skin', O.skin, L.skin)}
+          ${viewLookRow('Pelo', 'hair', O.hair, L.hair, true)}
+          <div class="look-row"><span class="label">Peinado</span><div class="chips">${O.hairStyle.map(v => chip('hairStyle', v, LOOK_LABELS[v], L.hairStyle))}</div></div>
+          <div class="look-row"><span class="label">Gorra</span><div class="chips">${chip('cap', true, 'Con gorra', L.cap)}${chip('cap', false, 'Sin gorra', L.cap)}</div></div>
+          ${when(L.cap, viewLookRow('Color de gorra', 'capColor', O.capColor, L.capColor, true))}
+          ${viewLookRow('Sudadera', 'top', O.top, L.top, true)}
+          ${viewLookRow('Pantalón', 'pants', O.pants, L.pants, true)}
+          ${viewLookRow('Zapatillas', 'shoes', O.shoes, L.shoes, true)}
+          <div class="look-row"><span class="label">Detalles</span><div class="chips">${chip('straps', !L.straps, L.straps ? 'Quitar mochila' : 'Poner mochila', '')}${chip('star', !L.star, L.star ? 'Quitar estrellas' : 'Poner estrellas', '')}</div></div>
+        </div></div>
+      <p class="hint">Lo que desbloqueas en el inventario (cascos, llavero, handycam, skate) se lo pone tu personaje.</p></section>
+    <section class="panel"><h3>Cuenta</h3>
+      ${cloud.user ? html`<p class="hint">Conectado como <b>${esc(cloud.user.email || '')}</b>. ${SYNC_LABEL[ui.sync]}.</p>
+        <div class="edit-row"><button class="btn danger" data-act="signOut">Cerrar sesión</button></div>
+        ${when(!ui.profileExtras, '<p class="hint">Para que los demás vean tu foto y tu personaje en el ranking, falta ejecutar <b>supabase-perfil.sql</b> en Supabase.</p>')}`
+        : ui.sync === 'off' ? '<p class="hint">Sin conexión con Supabase: todo se guarda en este dispositivo.</p>'
+        : '<p class="hint">Crea una cuenta para guardar tu progreso, usarlo en varios dispositivos y salir en el ranking.</p><button class="btn primary" data-act="syncInfo">Crear cuenta o entrar</button>'}</section>`;
 }
 function viewRankTeaser() {
   if (!cloud.user || ui.rankingState !== 'ok') return '';
@@ -650,7 +707,7 @@ function viewRanking() {
     const rows = rankedPlayers(tab);
     body = html`<ol class="ranking">${rows.map((r, i) => {
       const value = tab === 'week' ? r.week_xp : r.xp;
-      return `<li class="${r.me ? 'me' : ''} ${i < 3 ? 'top top' + (i + 1) : ''}"><span class="pos num">${i + 1}</span>${avatar(r.name, r.color)}
+      return `<li class="${r.me ? 'me' : ''} ${i < 3 ? 'top top' + (i + 1) : ''}"><span class="pos num">${i + 1}</span>${avatar(r)}
         <span class="who"><b>${esc(r.name)}${r.me ? ' <em>tú</em>' : ''}</b><small class="num">Nivel ${r.level} · racha ${r.streak} ${r.streak === 1 ? 'día' : 'días'}${tab === 'week' ? ` · ${r.chests_week} ${r.chests_week === 1 ? 'cofre' : 'cofres'}` : ''}</small></span>
         <span class="score num">${value}<small>XP</small></span></li>`;
     })}</ol>${when(rows.length < 2, '<p class="hint">De momento estás tú solo. Dale a Invitar y pásale el enlace a quien quieras retar.</p>')}`;
@@ -659,8 +716,8 @@ function viewRanking() {
 }
 function viewHero() {
   const xp = totalXP(), L = levelOf(xp), from = xpForLevel(L), to = xpForLevel(L + 1), p = (xp - from) / (to - from), m = mood();
-  return html`<section class="hero">${viewAxis(m.kind)}
-    <div class="hero-txt"><img class="logo" src="${IMG.logo}" alt="AXIS">
+  return html`<section class="hero" ${heroStyle()}>${viewAxis(m.kind)}
+    <div class="hero-txt">${when(S.look.preset === 'axis', `<img class="logo" src="${IMG.logo}" alt="AXIS">`)}
       <span class="pill">${GLYPH.star}Nivel ${L}</span><h1>${rankFor(L)}</h1>
       <div class="xpbar" role="progressbar" aria-valuenow="${pct(p)}" aria-valuemin="0" aria-valuemax="100" aria-label="Progreso al siguiente nivel"><i style="width:${p * 100}%"></i></div>
       <small class="num">${xp} XP · faltan ${to - xp} para el nivel ${L + 1}</small></div>
@@ -929,7 +986,7 @@ function viewCampaign(c) {
 
 function render() {
   const campaign = S.campaigns.find(c => c.id === ui.view);
-  if (!campaign && ui.view !== 'shop' && ui.view !== 'ranking') ui.view = 'home';
+  if (!campaign && !['shop', 'ranking', 'profile'].includes(ui.view)) ui.view = 'home';
   const y = window.scrollY;
   const nav = document.getElementById('nav');
   if (!S.onboarded) {
@@ -938,7 +995,7 @@ function render() {
     return;
   }
   nav.hidden = false;
-  const main = campaign ? viewCampaign(campaign) : ui.view === 'shop' ? viewShop() : ui.view === 'ranking' ? viewRanking() : viewHome();
+  const main = campaign ? viewCampaign(campaign) : ui.view === 'shop' ? viewShop() : ui.view === 'ranking' ? viewRanking() : ui.view === 'profile' ? viewProfile() : viewHome();
   document.getElementById('app').innerHTML = viewTop() + viewAccount() + main
     + `<datalist id="ex-list">${COMMON_EXERCISES.map(n => `<option value="${n}">`).join('')}</datalist>`;
   nav.innerHTML = viewNav();
@@ -1026,9 +1083,14 @@ const actions = {
   decrement: el => hitBoss(el, s => { const { c, m } = findMission(el); if (m.count > 0) { m.count--; logActivity(s, c.id, -1); } }),
 
   // Perfil, bienvenida y ranking
-  pickOnboardColor: el => { ui.onbColor = el.dataset.k; document.querySelectorAll('.onb .swatches button').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === ui.onbColor)); },
   toggleStarter: el => { const k = el.dataset.k, on = !ui.onboardCamps[k]; ui.onboardCamps[k] = on; el.classList.toggle('on', on); el.setAttribute('aria-pressed', on); },
-  setProfileColor: el => update(s => { s.color = el.dataset.k; }, { reward: false }),
+  setProfileColor: el => update(s => { s.color = colorHex(el.dataset.k); }, { reward: false }),
+  setLook: el => update(s => {
+    const v = el.dataset.v;
+    s.look = Object.assign({}, s.look, { [el.dataset.f]: v === 'true' ? true : v === 'false' ? false : v, preset: null });
+  }, { reward: false }),
+  lookPreset: el => update(s => { s.look = el.dataset.k === 'axis' ? Object.assign({}, Character.AXIS) : Character.randomLook(); }, { reward: false }),
+  removePhoto: () => update(s => { s.photo = null; }, { reward: false }),
   rankTab: repaint(el => { ui.rankTab = el.dataset.k; }),
   shareApp: async () => {
     const url = location.origin + location.pathname, text = `Te reto en Modo Campaña. Hazte una cuenta y a ver quién sube más esta semana: ${url}`;
@@ -1218,11 +1280,11 @@ const forms = {
     const name = F.n.value.trim();
     if (!name) { F.n.focus(); return; }
     update(s => {
-      s.name = name.slice(0, 24); s.color = ui.onbColor || 'lilac'; s.onboarded = true;
+      s.name = name.slice(0, 24); s.onboarded = true;
       s.campaigns = s.campaigns.filter(c => ui.onboardCamps[c.id] !== false);
     }, { reward: false });
-    window.scrollTo(0, 0);
-    toast(`¡Bienvenido, ${name}!`);
+    ui.view = 'profile'; render(); window.scrollTo(0, 0);
+    toast(`¡Bienvenido, ${name}! Ahora hazte tu personaje`);
   },
   saveProfile: (f, F) => {
     const name = F.n.value.trim();
@@ -1303,6 +1365,28 @@ document.addEventListener('change', ev => {
   form.querySelectorAll('.fgroup').forEach(g => { g.hidden = !KIND_FIELDS[t.value].includes(g.dataset.needs); });
   form.querySelector('.kind-help').textContent = KIND_HELP[t.value];
 });
+/** Foto de perfil: recorte cuadrado de 192 px en JPEG, para que pese poco. */
+async function resizePhoto(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    await new Promise((ok, fail) => { img.onload = ok; img.onerror = fail; img.src = url; });
+    const side = Math.min(img.naturalWidth, img.naturalHeight), out = document.createElement('canvas');
+    out.width = out.height = 192;
+    out.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, 192, 192);
+    return out.toDataURL('image/jpeg', 0.8);
+  } finally { URL.revokeObjectURL(url); }
+}
+document.addEventListener('change', async ev => {
+  const t = ev.target;
+  if (t.dataset.colorAct) { const fake = { dataset: { k: t.value, v: t.value, f: t.dataset.f } }; actions[t.dataset.colorAct](fake); return; }
+  if (t.hasAttribute('data-photo') && t.files && t.files[0]) {
+    try { const photo = await resizePhoto(t.files[0]); update(s => { s.photo = photo; }, { reward: false }); toast('Foto guardada'); }
+    catch (e) { toast('No se ha podido leer esa imagen. Prueba con otra'); }
+  }
+});
+// Sin zoom con dos dedos (Safari)
+['gesturestart', 'gesturechange'].forEach(type => document.addEventListener(type, e => e.preventDefault(), { passive: false }));
 const ENTER = { kg: 'logWeight', goal: 'setGoal', 'nc-name': 'createCampaign' };
 document.addEventListener('keydown', ev => {
   if (ev.key !== 'Enter' || !ENTER[ev.target.id]) return;
