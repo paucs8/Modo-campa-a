@@ -1,6 +1,6 @@
 // Guarda la app en el móvil para que abra rápido y funcione sin conexión.
 // Al cambiar cualquier archivo, sube VERSION para que los móviles descarguen la nueva.
-const VERSION = 'v19';
+const VERSION = 'v20';
 const CACHE = `modo-campana-${VERSION}`;
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'config.js', 'character.js', 'scene.js', 'manifest.webmanifest',
@@ -11,7 +11,7 @@ const SHELL = [
 ];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL.map(url => new Request(url, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', event => {
@@ -27,7 +27,8 @@ self.addEventListener('fetch', event => {
   const { request } = event;
   if (request.method !== 'GET') return;
   event.respondWith(
-    fetch(request)
+    // Lo de la propia app se pide siempre comprobando si hay versión nueva (sin tirar de la caché del navegador)
+    fetch(request.url.startsWith(self.location.origin) ? new Request(request, { cache: 'no-cache' }) : request)
       .then(response => {
         if (response.ok && (request.url.startsWith(self.location.origin) || request.url.includes('fonts.g') || request.url.includes('cdn.jsdelivr.net'))) {
           const copy = response.clone();
