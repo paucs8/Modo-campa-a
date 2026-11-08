@@ -1,9 +1,9 @@
 // Guarda la app en el móvil para que abra rápido y funcione sin conexión.
 // Al cambiar cualquier archivo, sube VERSION para que los móviles descarguen la nueva.
-const VERSION = 'v13';
+const VERSION = 'v14';
 const CACHE = `modo-campana-${VERSION}`;
 const SHELL = [
-  './', 'index.html', 'styles.css', 'app.js', 'config.js', 'character.js', 'manifest.webmanifest',
+  './', 'index.html', 'styles.css', 'app.js', 'config.js', 'character.js', 'scene.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon.png',
   'assets/cofre.png', 'assets/cofre-abierto.png', 'assets/moneda.png', 'assets/jefe.png',
   'assets/items/llavero.png', 'assets/items/botella.png', 'assets/items/auriculares.png', 'assets/items/movil.png',

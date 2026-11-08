@@ -192,7 +192,7 @@ const ui = {
   addingCampaign: false, newIcon: 'star', newColor: 'pink',
   draft: storage.get(STORAGE.draft), sync: 'local', exForm: null, account: false,
   addingReward: false, bossHit: null,
-  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false }, profileExtras: true, lookTab: 'cara',
+  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false }, profileExtras: true, lookTab: 'cara', playerId: null,
 };
 
 /* =========================================================
@@ -460,7 +460,7 @@ async function publishProfile() {
   const xp = totalXP();
   const row = { user_id: cloud.user.id, name: S.name.slice(0, 24), color: S.color, level: levelOf(xp), xp,
     week: mondayKey(), week_xp: weekXP(), streak: activeStreak(), chests_week: chestsThisWeek(), updated_at: new Date().toISOString() };
-  let { error } = await cloud.client.from('profiles').upsert(ui.profileExtras ? Object.assign({ photo: S.photo, look: S.look }, row) : row);
+  let { error } = await cloud.client.from('profiles').upsert(ui.profileExtras ? Object.assign({ photo: S.photo, look: Object.assign({}, S.look, { items: wearing() }) }, row) : row);
   if (error && missingColumn(error)) { ui.profileExtras = false; ({ error } = await cloud.client.from('profiles').upsert(row)); render(); }
   if (missingTable(error)) { ui.rankingState = 'missing'; render(); }
 }
@@ -484,7 +484,7 @@ function listenRanking() {
 function rankedPlayers(tab = ui.rankTab) {
   const monday = mondayKey();
   const rows = (ui.ranking || []).map(r => (r.user_id === (cloud.user && cloud.user.id)
-    ? { ...r, name: S.name, color: S.color, photo: S.photo, look: S.look, level: levelOf(totalXP()), xp: totalXP(), week: monday, week_xp: weekXP(), streak: activeStreak(), chests_week: chestsThisWeek(), me: true }
+    ? { ...r, name: S.name, color: S.color, photo: S.photo, look: Object.assign({}, S.look, { items: wearing() }), level: levelOf(totalXP()), xp: totalXP(), week: monday, week_xp: weekXP(), streak: activeStreak(), chests_week: chestsThisWeek(), me: true }
     : { ...r, week_xp: r.week === monday ? r.week_xp : 0, chests_week: r.week === monday ? r.chests_week : 0 }));
   const score = r => (tab === 'week' ? r.week_xp : r.xp);
   return rows.sort((a, b) => score(b) - score(a) || b.streak - a.streak);
@@ -711,6 +711,55 @@ function viewRankTeaser() {
   return html`<button class="teaser ${pos === 0 ? 'first' : ''}" data-act="open" data-id="ranking"><span class="teaser-pos num">${pos + 1}º</span>
     <span class="txt"><b>Vas ${pos + 1}º de ${rows.length} esta semana</b><small>${sub}</small></span><span class="go">${GLYPH.chev}</span></button>`;
 }
+/** Ánimo de cualquier jugador: el tuyo se calcula entero; el de los demás, por su racha. */
+function playerMood(r) {
+  if (r.me) return mood().kind;
+  if (r.streak >= 3) return 'fire';
+  if (r.streak >= 1) return 'happy';
+  return r.xp > 0 ? 'tired' : 'idle';
+}
+const playerImage = r => Character.image(r.look || Character.BASE, { items: (r.look && r.look.items) || [], closed: playerMood(r) === 'tired' });
+const MOOD_TEXT = { fire: 'En racha', happy: 'Activo', proud: 'Cofre abierto', tired: 'Lleva días parado', idle: 'Recién llegado' };
+/** La plaza: todos los personajes, los tres primeros en el podio y quien está parado, en el banco. */
+function viewPlaza(rows) {
+  const tab = ui.rankTab, score = r => (tab === 'week' ? r.week_xp : r.xp);
+  const podium = rows.slice(0, 3), others = rows.slice(3);
+  const blocks = [{ x: 50, h: 24 }, { x: 31, h: 17 }, { x: 69, h: 11 }];
+  // Por el suelo, de delante a atrás; quien lleva días parado se sienta en el banco
+  const ground = [{ x: 9, b: 1, s: 1 }, { x: 91, b: 1, s: 1 }, { x: 17, b: 21, s: 0.8 }, { x: 40, b: 31, s: 0.66 }, { x: 60, b: 31, s: 0.66 }, { x: 27, b: 34, s: 0.6 }, { x: 8, b: 30, s: 0.66 }, { x: 70, b: 36, s: 0.56 }];
+  const bench = [{ x: 76, b: 31, s: 0.7 }, { x: 88, b: 31, s: 0.7 }];
+  const active = others.filter(r => playerMood(r) !== 'tired'), tired = others.filter(r => playerMood(r) === 'tired');
+  const placed = [...tired.slice(0, bench.length).map((r, i) => [r, bench[i], 'bench']), ...active.slice(0, ground.length).map((r, i) => [r, ground[i], ''])];
+  const person = (r, x, b, sc, extra = '') => {
+    const m = playerMood(r), bg = colorHex(r.color);
+    return `<button class="pl m-${m} ${r.me ? 'me' : ''} ${extra}" style="left:${x}%;bottom:calc(${b}% - 3px);--s:${sc};z-index:${extra.includes('podium') ? 80 : b < 10 ? 70 : Math.round(55 - b)}" data-act="openPlayer" data-id="${esc(r.user_id)}" aria-label="${esc(r.name)}">
+      <span class="tag" style="background:${bg};color:${inkFor(bg)}">${esc(r.name)}</span>${extra.includes('first') ? `<img class="crown" src="${Scene.crown()}" alt="">` : ''}
+      <img class="pl-img" src="${playerImage(r)}" alt="">${m === 'tired' ? '<span class="zzz">z<b>z</b></span>' : ''}</button>`;
+  };
+  const hidden = others.length - placed.length;
+  return html`<section class="plaza" style="background-image:url(${Scene.plaza()})">
+    ${podium.map((r, i) => `<span class="podium p${i + 1}" style="left:${blocks[i].x}%;height:${blocks[i].h}%"><b>${i + 1}</b><small class="num">${score(r)} XP</small></span>`)}
+    ${podium.map((r, i) => person(r, blocks[i].x, blocks[i].h, 1, i === 0 ? 'first podium' : 'podium'))}
+    ${placed.map(([r, p, extra]) => person(r, p.x, p.b, p.s, extra))}
+    ${when(hidden > 0, `<span class="plaza-more">+${hidden}</span>`)}
+  </section>`;
+}
+function viewPlayer() {
+  const rows = ui.ranking ? rankedPlayers('week') : [], r = rows.find(x => x.user_id === ui.playerId);
+  if (!r) return '<section class="panel"><p class="hint">No encuentro a esta persona. Vuelve al ranking.</p><button class="btn" data-act="open" data-id="ranking">Ir al ranking</button></section>';
+  const pos = rows.indexOf(r) + 1, bg = colorHex(r.color), ink = inkFor(bg), m = playerMood(r);
+  const items = ITEMS.filter(i => r.level >= i.level);
+  return html`<section class="c-hero player-hero" style="--hero-bg:${bg};--hero-ink:${ink}" data-ink="${ink === '#111111' ? 'dark' : 'light'}">
+      <div class="player-top"><div class="player-char ${'m-' + m}"><img src="${playerImage(r)}" alt=""></div>
+        <div class="player-info"><span class="pill">${GLYPH.trophy}${pos}º esta semana</span><h2>${esc(r.name)}</h2><p>Nivel ${r.level} · ${rankFor(r.level)}</p><p class="mood-chip">${MOOD_TEXT[m]}</p></div></div></section>
+    <section class="panel"><h3>Esta semana</h3>
+      <div class="trio"><div><b class="num">${r.week_xp}</b><span>XP</span></div><div><b class="num">${r.streak}</b><span>${r.streak === 1 ? 'día seguido' : 'días seguidos'}</span></div><div><b class="num">${r.chests_week}</b><span>${r.chests_week === 1 ? 'cofre' : 'cofres'}</span></div></div>
+      <p class="hint num">${r.xp} XP en total.</p></section>
+    <section class="panel"><h3>Objetos <span class="label">${items.length}/${ITEMS.length}</span></h3>
+      ${items.length ? `<div class="mini-items">${items.map(i => `<span title="${i.name}"><img src="${IMG[i.key]}" alt="${i.name}"></span>`).join('')}</div>` : '<p class="hint">Todavía no ha desbloqueado ninguno.</p>'}</section>
+    ${r.me ? '<button class="btn wide" data-act="open" data-id="profile">Editar mi perfil</button>' : ''}
+    <button class="btn ghost wide" data-act="open" data-id="ranking">Volver al ranking</button>`;
+}
 function viewRanking() {
   const left = daysLeftInWeek(), tab = ui.rankTab;
   const head = html`<section class="c-hero rank-hero"><span class="pill">${GLYPH.trophy}Ranking</span>
@@ -731,10 +780,11 @@ function viewRanking() {
     const rows = rankedPlayers(tab);
     body = html`<ol class="ranking">${rows.map((r, i) => {
       const value = tab === 'week' ? r.week_xp : r.xp;
-      return `<li class="${r.me ? 'me' : ''} ${i < 3 ? 'top top' + (i + 1) : ''}"><span class="pos num">${i + 1}</span>${avatar(r)}
+      return `<li class="${r.me ? 'me' : ''} ${i < 3 ? 'top top' + (i + 1) : ''}"><button class="rank-row" data-act="openPlayer" data-id="${esc(r.user_id)}"><span class="pos num">${i + 1}</span>${avatar(r)}
         <span class="who"><b>${esc(r.name)}${r.me ? ' <em>tú</em>' : ''}</b><small class="num">Nivel ${r.level} · racha ${r.streak} ${r.streak === 1 ? 'día' : 'días'}${tab === 'week' ? ` · ${r.chests_week} ${r.chests_week === 1 ? 'cofre' : 'cofres'}` : ''}</small></span>
-        <span class="score num">${value}<small>XP</small></span></li>`;
+        <span class="score num">${value}<small>XP</small></span></button></li>`;
     })}</ol>${when(rows.length < 2, '<p class="hint">De momento estás tú solo. Dale a Invitar y pásale el enlace a quien quieras retar.</p>')}`;
+    return head + viewPlaza(rows) + `<p class="hint center">Toca a alguien para ver su perfil.</p><section class="panel">${body}</section>`;
   }
   return head + `<section class="panel">${body}</section>`;
 }
@@ -1010,7 +1060,7 @@ function viewCampaign(c) {
 
 function render() {
   const campaign = S.campaigns.find(c => c.id === ui.view);
-  if (!campaign && !['shop', 'ranking', 'profile'].includes(ui.view)) ui.view = 'home';
+  if (!campaign && !['shop', 'ranking', 'profile', 'player'].includes(ui.view)) ui.view = 'home';
   const y = window.scrollY;
   const nav = document.getElementById('nav');
   if (!S.onboarded) {
@@ -1019,7 +1069,7 @@ function render() {
     return;
   }
   nav.hidden = false;
-  const main = campaign ? viewCampaign(campaign) : ui.view === 'shop' ? viewShop() : ui.view === 'ranking' ? viewRanking() : ui.view === 'profile' ? viewProfile() : viewHome();
+  const main = campaign ? viewCampaign(campaign) : ui.view === 'shop' ? viewShop() : ui.view === 'ranking' ? viewRanking() : ui.view === 'profile' ? viewProfile() : ui.view === 'player' ? viewPlayer() : viewHome();
   document.getElementById('app').innerHTML = viewTop() + viewAccount() + main
     + `<datalist id="ex-list">${COMMON_EXERCISES.map(n => `<option value="${n}">`).join('')}</datalist>`;
   nav.innerHTML = viewNav();
@@ -1117,6 +1167,7 @@ const actions = {
   randomLook: () => update(s => { s.look = Character.randomLook(); }, { reward: false }),
   removePhoto: () => update(s => { s.photo = null; }, { reward: false }),
   rankTab: repaint(el => { ui.rankTab = el.dataset.k; }),
+  openPlayer: el => { ui.playerId = el.dataset.id; ui.view = 'player'; render(); window.scrollTo(0, 0); },
   shareApp: async () => {
     const url = location.origin + location.pathname, text = `Te reto en Modo Campaña. Hazte una cuenta y a ver quién sube más esta semana: ${url}`;
     try { if (navigator.share) { await navigator.share({ title: 'Modo Campaña', text, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }

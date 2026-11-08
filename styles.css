@@ -429,3 +429,43 @@ textarea{font-size:16px}
 .look-tabs{display:flex;gap:4px;background:var(--bg);border-radius:999px;padding:4px;overflow-x:auto;scrollbar-width:none}
 .look-tabs button{flex:1;border:0;background:none;border-radius:999px;padding:8px 10px;font-weight:600;font-size:13.5px;color:var(--muted);white-space:nowrap}
 .look-tabs button[aria-selected="true"]{background:var(--ink);color:var(--on-ink)}
+
+/* La plaza */
+.plaza{position:relative;height:310px;border-radius:var(--r);background-size:cover;background-position:center bottom;image-rendering:pixelated;overflow:hidden;box-shadow:inset 0 0 0 2px rgba(17,17,17,.08)}
+.podium{position:absolute;bottom:0;transform:translateX(-50%);width:21%;background:#F2F2F2;border:2px solid #111;border-bottom:0;border-radius:6px 6px 0 0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:5px;color:#111;z-index:60}
+.podium b{font-size:17px;font-weight:800;line-height:1}
+.podium small{font-size:10px;font-weight:600;opacity:.75}
+.podium.p1{background:#FFD66B}
+.podium.p2{background:#E3E3E8}
+.podium.p3{background:#E8B48C}
+.pl{position:absolute;transform:translateX(-50%) scale(var(--s,1));transform-origin:50% 100%;width:70px;border:0;background:none;padding:0;line-height:0;display:flex;flex-direction:column;align-items:center;cursor:pointer}
+.pl-img{display:block;width:50px;height:auto;aspect-ratio:44/82;image-rendering:pixelated;filter:drop-shadow(0 3px 0 rgba(17,17,17,.2))}
+.pl .tag{line-height:1.35;margin-bottom:3px;max-width:78px;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:99px;border:1.5px solid #111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl.me .tag{outline:2px solid #fff}
+.pl .crown{width:24px;height:auto;image-rendering:pixelated;margin-bottom:-5px;position:relative;z-index:1;animation:float 2.4s ease-in-out infinite}
+.pl.first{z-index:90!important}
+.pl.m-fire .pl-img{animation:hop .9s steps(2,jump-none) infinite}
+.pl.m-happy .pl-img{animation:bob 1.6s steps(2,jump-none) infinite}
+.pl.m-tired .pl-img{filter:saturate(.35) brightness(.92)}
+.pl .zzz{position:absolute;top:18px;right:6px;font-size:14px}
+.pl:focus-visible{outline:3px solid #111;outline-offset:2px;border-radius:8px}
+.plaza-more{position:absolute;right:10px;top:10px;background:#111;color:#fff;font-weight:700;font-size:12px;padding:3px 9px;border-radius:99px;z-index:100}
+@keyframes hop{from{transform:translateY(0)}to{transform:translateY(-6px)}}
+.rank-row{all:unset;display:flex;align-items:center;gap:10px;width:100%;cursor:pointer}
+.rank-row:focus-visible{outline:3px solid var(--blue);outline-offset:4px;border-radius:12px}
+
+/* Perfil de otro jugador */
+.player-hero{background:var(--hero-bg);color:var(--hero-ink)}
+.player-top{display:flex;align-items:flex-end;gap:16px}
+.player-char{flex:none;width:96px;aspect-ratio:44/82}
+.player-char img{width:100%;height:100%;image-rendering:pixelated;filter:drop-shadow(0 6px 0 rgba(17,17,17,.2))}
+.player-char.m-fire img{animation:hop .9s steps(2,jump-none) infinite}
+.player-char.m-tired img{filter:saturate(.35) brightness(.92)}
+.player-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;padding-bottom:6px}
+.player-info h2{max-width:none;overflow-wrap:anywhere}
+.player-info p{margin:0;max-width:none}
+.mood-chip{align-self:flex-start;font-size:12.5px;font-weight:700;background:rgba(255,255,255,.55);color:#111;border-radius:99px;padding:3px 10px}
+.mini-items{display:flex;flex-wrap:wrap;gap:8px}
+.mini-items span{width:52px;height:52px;border-radius:14px;background:var(--lime);display:grid;place-items:center;padding:8px}
+.mini-items img{max-width:100%;max-height:100%;image-rendering:pixelated}
+@media (max-width:400px){.plaza{height:290px}.pl-img{width:46px}}
