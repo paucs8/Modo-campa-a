@@ -308,7 +308,8 @@ input,select{font:inherit;font-size:16px;border:2px solid var(--soft-line);backg
 .stack-s{display:flex;flex-direction:column;gap:6px}
 .spread{justify-content:space-between}
 .setrow.one{grid-template-columns:24px 1fr auto}
-.btn.on-color{background:#fff}
+.btn.on-color{background:#fff;border-color:#fff;color:#111}
+[data-ink="light"] .btn.dark{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.5)}
 .hint.on-lilac{color:#111}
 
 .exname{background:none;border:0;padding:0;text-align:left;font-size:14px;flex:1 1 140px;min-width:0;text-decoration:underline;text-decoration-color:var(--soft-line);text-underline-offset:3px}
