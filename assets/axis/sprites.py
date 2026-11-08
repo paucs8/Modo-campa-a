@@ -1,6 +1,6 @@
 """AXIS por capas: base + objetos equipables + ojos cerrados, cofre, moneda y jefe."""
 from PIL import Image
-OUT='/home/claude/modo-campa-a/assets/'
+OUT='assets/'  # ejecutar desde la raíz del repo
 W,H=36,68
 c={'K':(17,17,17),'C':(28,28,32),'Cs':(48,48,56),'W':(244,244,244),'H':(22,22,27),'Hh':(44,44,54),'S':(232,191,156),'Ss':(198,150,114),
 'L':(226,226,228),'Lg':(184,184,188),'Ld':(132,132,138),'P':(36,36,40),'Pd':(22,22,25),'Pl':(56,56,64),'B':(14,14,16),'M':(181,181,186),
