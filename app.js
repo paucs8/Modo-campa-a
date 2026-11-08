@@ -44,6 +44,8 @@ const GLYPH = {
   plus: svg('<path d="M12 5v14M5 12h14"/>', 'width="22" height="22"'),
   check: svg('<path d="m5 12.5 4.5 4.5L19 7.5"/>', 'stroke-width="3.2"'),
   chev: svg('<path d="m6 9 6 6 6-6"/>', 'width="20" height="20" stroke-width="2.4"'),
+  trophy: svg('<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5v1a3 3 0 0 0 3 3M16 6h3v1a3 3 0 0 1-3 3M12 13v4M8 20h8M10 17h4v3h-4z"/>'),
+  share: svg('<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6"/>'),
   bag: svg('<path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>'),
   star: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1.5 14.2 9.8 22.5 12 14.2 14.2 12 22.5 9.8 14.2 1.5 12 9.8 9.8z"/></svg>',
 };
@@ -147,7 +149,7 @@ const defaultRewards = () => [
 ];
 // Premios de ejemplo de la versión anterior: si siguen sin tocar, se cambian por los nuevos
 const OLD_REWARDS = ['Un café o un snack fuera', 'Tarde de videojuegos o serie', 'Un día libre de entreno sin culpa', 'Cena fuera o pedir comida', 'Un capricho (ropa, algo para el skate…)'];
-const defaultState = () => ({ v: 5, name: 'Pau', weight: { start: null, goal: null, log: [] }, train: [], sessions: [], routines: defaultRoutines(), campaigns: defaultCampaigns(),
+const defaultState = () => ({ v: 5, name: '', onboarded: false, color: 'lilac', xpDays: {}, weight: { start: null, goal: null, log: [] }, train: [], sessions: [], routines: defaultRoutines(), campaigns: defaultCampaigns(),
   daily: {}, activity: {}, rewards: defaultRewards(), purchases: [], unequipped: [] });
 
 /** Pone al día datos guardados por versiones anteriores. */
@@ -169,6 +171,9 @@ function migrate(s) {
   s.rewards = s.rewards || defaultRewards(); s.purchases = s.purchases || []; s.unequipped = s.unequipped || [];
   // v5: premios nuevos (cine y compras) si los de ejemplo no se habían cambiado
   if ((s.v || 0) < 5 && s.rewards.every(r => OLD_REWARDS.includes(r.name))) s.rewards = defaultRewards();
+  // Perfil para el ranking: nombre, color y XP por día (para la liga semanal)
+  if (s.onboarded === undefined) s.onboarded = !!s.name;
+  s.color = s.color || 'lilac'; s.xpDays = s.xpDays || {};
   s.v = 5;
   return s;
 }
@@ -182,6 +187,7 @@ const ui = {
   addingCampaign: false, newIcon: 'star', newColor: 'pink',
   draft: storage.get(STORAGE.draft), sync: 'local', exForm: null, account: false,
   addingReward: false, bossHit: null,
+  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false },
 };
 
 /* =========================================================
@@ -334,6 +340,21 @@ function boss(c) {
   return { level: last, hp: defeated ? 0 : hp, defeated, left, target: (last.missions.find(m => !isDone(m)) || last.missions[0] || {}).name };
 }
 
+// Liga semanal: XP ganada desde el lunes, a partir de la XP guardada cada día
+function mondayKey(date = new Date()) { const d = new Date(date); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return dateKey(d); }
+function weekXP() {
+  const monday = mondayKey(), before = Object.keys(S.xpDays).filter(d => d < monday).sort().pop();
+  return Math.max(0, totalXP() - (before ? S.xpDays[before] : 0));
+}
+const chestsThisWeek = () => Object.entries(S.daily).filter(([d, v]) => d >= mondayKey() && v.chest).length;
+function activeStreak() {
+  const days = activeDays(), d = new Date();
+  if (!days.has(today())) d.setDate(d.getDate() - 1);
+  let n = 0; while (days.has(dateKey(d))) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+function daysLeftInWeek() { return 7 - ((new Date().getDay() + 6) % 7); }
+
 function weekDays() {
   const now = new Date(), dow = (now.getDay() + 6) % 7, monday = new Date(now);
   monday.setDate(now.getDate() - dow);
@@ -411,6 +432,7 @@ const stamp = s => s.updatedAt || 0;
 /** Guarda en el dispositivo y, si hay sesión, sube a Supabase poco después. */
 function persist() {
   S.updatedAt = Date.now();
+  S.xpDays[today()] = totalXP();
   storage.set(STORAGE.state, S);
   if (cloud.user) schedulePush();
 }
@@ -422,7 +444,42 @@ function schedulePush(delay = 800) {
 async function push() {
   const { error } = await cloud.client.from('saves').upsert({ user_id: cloud.user.id, state: S, updated_at: new Date(stamp(S) || Date.now()).toISOString() });
   cloud.pending = false;
-  if (error) { setSync('error'); setTimeout(() => cloud.user && schedulePush(0), 15000); } else setSync('cloud');
+  if (error) { setSync('error'); setTimeout(() => cloud.user && schedulePush(0), 15000); } else { setSync('cloud'); publishProfile(); }
+}
+
+/* ---------- Ranking: cada uno publica su perfil y todos ven la tabla ---------- */
+const missingTable = e => e && (e.code === '42P01' || e.code === 'PGRST205' || /does not exist|schema cache/i.test(e.message || ''));
+async function publishProfile() {
+  if (!cloud.user || !S.onboarded || !S.name) return;
+  const xp = totalXP();
+  const { error } = await cloud.client.from('profiles').upsert({
+    user_id: cloud.user.id, name: S.name.slice(0, 24), color: S.color, level: levelOf(xp), xp,
+    week: mondayKey(), week_xp: weekXP(), streak: activeStreak(), chests_week: chestsThisWeek(), updated_at: new Date().toISOString(),
+  });
+  if (missingTable(error)) { ui.rankingState = 'missing'; render(); }
+}
+let rankingTimer = null;
+async function loadRanking() {
+  if (!cloud.user) return;
+  const { data, error } = await cloud.client.from('profiles').select('user_id,name,color,level,xp,week,week_xp,streak,chests_week').limit(200);
+  if (error) { ui.rankingState = missingTable(error) ? 'missing' : 'error'; render(); return; }
+  ui.ranking = data; ui.rankingState = 'ok';
+  if (!isTyping()) render();
+}
+function listenRanking() {
+  if (cloud.rankChannel) cloud.client.removeChannel(cloud.rankChannel);
+  cloud.rankChannel = cloud.client.channel('ranking')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => { clearTimeout(rankingTimer); rankingTimer = setTimeout(loadRanking, 400); })
+    .subscribe();
+}
+/** Tabla ordenada: en la semana manda la XP de esta semana (quien no ha jugado esta semana va con 0). */
+function rankedPlayers(tab = ui.rankTab) {
+  const monday = mondayKey();
+  const rows = (ui.ranking || []).map(r => (r.user_id === (cloud.user && cloud.user.id)
+    ? { ...r, name: S.name, color: S.color, level: levelOf(totalXP()), xp: totalXP(), week: monday, week_xp: weekXP(), streak: activeStreak(), chests_week: chestsThisWeek(), me: true }
+    : { ...r, week_xp: r.week === monday ? r.week_xp : 0, chests_week: r.week === monday ? r.chests_week : 0 }));
+  const score = r => (tab === 'week' ? r.week_xp : r.xp);
+  return rows.sort((a, b) => score(b) - score(a) || b.streak - a.streak);
 }
 function applyRemote(remote) {
   if (isTyping()) { cloud.queued = remote; return; }
@@ -451,7 +508,7 @@ function listenRemote() {
 async function mergeWithCloud() {
   const { data, error } = await cloud.client.from('saves').select('state').eq('user_id', cloud.user.id).maybeSingle();
   if (error) { setSync('error'); return; }
-  if (data && data.state) { S = mergeProgress(migrate(data.state), S); render(); }
+  if (data && data.state) { S = stamp(S) ? mergeProgress(migrate(data.state), S) : migrate(data.state); render(); }
   persist();
 }
 async function startSync(user, { fresh = false } = {}) {
@@ -460,10 +517,15 @@ async function startSync(user, { fresh = false } = {}) {
   render();
   if (fresh) await mergeWithCloud(); else await pull();
   listenRemote();
+  listenRanking();
+  publishProfile();
+  loadRanking();
 }
 function stopSync() {
   if (cloud.channel) cloud.client.removeChannel(cloud.channel);
-  Object.assign(cloud, { user: null, channel: null, pending: false });
+  if (cloud.rankChannel) cloud.client.removeChannel(cloud.rankChannel);
+  Object.assign(cloud, { user: null, channel: null, rankChannel: null, pending: false });
+  Object.assign(ui, { ranking: null, rankingState: 'idle' });
   setSync('signedout');
 }
 async function initCloud() {
@@ -476,7 +538,7 @@ async function initCloud() {
     if (event === 'SIGNED_IN' && session && (!cloud.user || cloud.user.id !== session.user.id)) startSync(session.user, { fresh: true });
     if (event === 'SIGNED_OUT') stopSync();
   });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pull(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { pull(); loadRanking(); } });
   window.addEventListener('online', () => pull());
 }
 document.addEventListener('focusout', () => setTimeout(() => {
@@ -517,14 +579,17 @@ function viewAccount() {
   if (ui.sync === 'off') return html`<section class="panel"><h3>Sincronización</h3><p class="hint">Falta configurar Supabase. Mientras tanto, todo se guarda en este dispositivo.</p></section>`;
   if (cloud.user) return html`<section class="panel"><h3>Tu cuenta <button class="btn ghost" data-act="toggleAccount">Cerrar</button></h3>
     <p class="hint">Conectado como <b>${esc(cloud.user.email || '')}</b>. ${SYNC_LABEL[ui.sync]}.</p>
+    <form class="stack-s" data-form="saveProfile"><label class="fld"><span>Tu nombre en el ranking</span><input name="n" maxlength="24" required value="${esc(S.name)}"></label>
+      ${viewColorPicker(S.color, 'setProfileColor')}<button class="btn">Guardar perfil</button></form>
     <div class="edit-row"><button class="btn" data-act="syncNow">Sincronizar ahora</button><button class="btn danger" data-act="signOut">Cerrar sesión</button></div></section>`;
-  return html`<section class="panel"><h3>Sincronizar móvil y PC <button class="btn ghost" data-act="toggleAccount">Cerrar</button></h3>
+  return html`<section class="panel"><h3>Tu cuenta <button class="btn ghost" data-act="toggleAccount">Cerrar</button></h3>
+    <p class="hint">Sirve para guardar tu progreso, usarlo en el móvil y en el PC, y competir en el ranking.</p>
     <form class="stack-s" data-form="signIn">
       <label class="fld"><span>Email</span><input name="email" type="email" autocomplete="email" required></label>
       <label class="fld"><span>Contraseña</span><input name="password" type="password" autocomplete="current-password" minlength="6" required></label>
       <div class="edit-row"><button class="btn primary">Entrar</button><button type="button" class="btn" data-act="signUp">Crear cuenta</button></div>
     </form>
-    <p class="hint">Usa la misma cuenta en el móvil y en el PC. Al entrar se junta lo de este dispositivo con lo de tu cuenta.</p></section>`;
+    <p class="hint">¿Primera vez? Pon tu email y una contraseña nueva y dale a Crear cuenta. Si ya tienes, dale a Entrar.</p></section>`;
 }
 function viewAxis(state) {
   const layers = [AXIS_LAYERS.base, ...wearing().map(k => AXIS_LAYERS[k])];
@@ -532,6 +597,66 @@ function viewAxis(state) {
   return `<div class="char mood-${state}" aria-hidden="true">${layers.map(src => `<img src="${src}" alt="">`).join('')}${state === 'tired' ? '<span class="zzz">z<b>z</b></span>' : ''}</div>`;
 }
 const coinBadge = n => `<span class="coins num"><img src="${IMG.coin}" alt="">${n}</span>`;
+const PLAYER_COLORS = ['lilac', 'orange', 'blue', 'lime', 'pink', 'red'];
+const viewColorPicker = (current, act) => `<div class="swatches" role="radiogroup" aria-label="Tu color">${PLAYER_COLORS.map(k =>
+  `<button type="button" data-act="${act}" data-k="${k}" aria-pressed="${k === current}" aria-label="Color ${k}" style="background:var(--${k})"></button>`).join('')}</div>`;
+const avatar = (name, color) => `<span class="ava" style="background:var(--${esc(color || 'lilac')})">${esc((name || '?').trim().charAt(0).toUpperCase() || '?')}</span>`;
+
+function viewOnboarding() {
+  const starters = [
+    { id: 'fisico', title: 'Físico', sub: 'Peso, entrenos y rutinas con progresión' },
+    { id: 'carnet', title: 'Carnet de conducir', sub: 'Del papeleo al examen práctico' },
+  ];
+  return html`<section class="hero onb-hero">${viewAxis('happy')}
+    <div class="hero-txt"><img class="logo" src="${IMG.logo}" alt="AXIS"><h1>Modo Campaña</h1>
+      <p class="onb-lead">Tus objetivos como un videojuego. Sube de nivel, abre cofres y compite con tus amigos.</p></div></section>
+    <form class="panel onb" data-form="onboard">
+      <label class="fld"><span>¿Cómo te llamas?</span><input name="n" maxlength="24" required autocomplete="given-name" placeholder="Tu nombre"></label>
+      <div class="fld"><span>Tu color</span>${viewColorPicker(ui.onbColor || 'lilac', 'pickOnboardColor')}</div>
+      <div class="fld"><span>¿Con qué empiezas?</span><div class="starters">${starters.map(c =>
+        `<button type="button" class="starter ${ui.onboardCamps[c.id] ? 'on' : ''}" data-act="toggleStarter" data-k="${c.id}" aria-pressed="${!!ui.onboardCamps[c.id]}"><span class="check">${GLYPH.check}</span><span><b>${c.title}</b><small>${c.sub}</small></span></button>`)}</div>
+        <p class="hint">Luego puedes crear tus propias campañas.</p></div>
+      <button class="btn primary wide">Empezar</button>
+    </form>
+    ${when(ui.sync !== 'off', '<p class="hint center">¿Ya tienes cuenta? <button class="linkbtn" data-act="syncInfo">Entra aquí</button></p>')}`;
+}
+function viewRankTeaser() {
+  if (!cloud.user || ui.rankingState !== 'ok') return '';
+  const rows = rankedPlayers('week'), pos = rows.findIndex(r => r.me);
+  if (pos < 0) return '';
+  if (rows.length < 2) return html`<button class="teaser" data-act="open" data-id="ranking"><span class="teaser-ico">${GLYPH.trophy}</span><span class="txt"><b>Tu liga está vacía</b><small>Invita a alguien y competid por la semana</small></span><span class="go">${GLYPH.chev}</span></button>`;
+  const ahead = pos > 0 ? rows[pos - 1] : null, me = rows[pos];
+  const sub = ahead ? `A ${ahead.week_xp - me.week_xp + 1} XP de pasar a ${esc(ahead.name)}` : `Le sacas ${me.week_xp - rows[1].week_xp} XP a ${esc(rows[1].name)}`;
+  return html`<button class="teaser ${pos === 0 ? 'first' : ''}" data-act="open" data-id="ranking"><span class="teaser-pos num">${pos + 1}º</span>
+    <span class="txt"><b>Vas ${pos + 1}º de ${rows.length} esta semana</b><small>${sub}</small></span><span class="go">${GLYPH.chev}</span></button>`;
+}
+function viewRanking() {
+  const left = daysLeftInWeek(), tab = ui.rankTab;
+  const head = html`<section class="c-hero rank-hero"><span class="pill">${GLYPH.trophy}Ranking</span>
+    <h2>${tab === 'week' ? 'Liga semanal' : 'Clasificación total'}</h2>
+    <p>${tab === 'week' ? `Gana quien más XP sume de lunes a domingo. ${left === 1 ? 'Hoy es el último día' : `Quedan ${left} días`}.` : 'Toda la XP desde que empezasteis.'}</p>
+    <div class="row"><div class="seg-tabs" role="tablist">
+      <button role="tab" data-act="rankTab" data-k="week" aria-selected="${tab === 'week'}">Esta semana</button>
+      <button role="tab" data-act="rankTab" data-k="total" aria-selected="${tab === 'total'}">Total</button></div>
+      <button class="btn dark" data-act="shareApp">${GLYPH.share}Invitar</button></div></section>`;
+  let body;
+  if (ui.sync === 'off') body = '<p class="hint">El ranking necesita la conexión con Supabase.</p>';
+  else if (!cloud.user) body = html`<p>Para competir necesitas una cuenta. Así cada uno tiene su progreso y aparece en la tabla.</p>
+    <button class="btn primary" data-act="syncInfo">Crear cuenta o entrar</button>`;
+  else if (ui.rankingState === 'missing') body = '<p>Falta preparar el ranking en Supabase: ejecuta <b>supabase-ranking.sql</b> en el SQL Editor.</p>';
+  else if (ui.rankingState === 'error') body = '<p class="hint">No se ha podido cargar el ranking. Revisa la conexión.</p>';
+  else if (!ui.ranking) body = '<p class="hint">Cargando ranking…</p>';
+  else {
+    const rows = rankedPlayers(tab);
+    body = html`<ol class="ranking">${rows.map((r, i) => {
+      const value = tab === 'week' ? r.week_xp : r.xp;
+      return `<li class="${r.me ? 'me' : ''} ${i < 3 ? 'top top' + (i + 1) : ''}"><span class="pos num">${i + 1}</span>${avatar(r.name, r.color)}
+        <span class="who"><b>${esc(r.name)}${r.me ? ' <em>tú</em>' : ''}</b><small class="num">Nivel ${r.level} · racha ${r.streak} ${r.streak === 1 ? 'día' : 'días'}${tab === 'week' ? ` · ${r.chests_week} ${r.chests_week === 1 ? 'cofre' : 'cofres'}` : ''}</small></span>
+        <span class="score num">${value}<small>XP</small></span></li>`;
+    })}</ol>${when(rows.length < 2, '<p class="hint">De momento estás tú solo. Dale a Invitar y pásale el enlace a quien quieras retar.</p>')}`;
+  }
+  return head + `<section class="panel">${body}</section>`;
+}
 function viewHero() {
   const xp = totalXP(), L = levelOf(xp), from = xpForLevel(L), to = xpForLevel(L + 1), p = (xp - from) / (to - from), m = mood();
   return html`<section class="hero">${viewAxis(m.kind)}
@@ -587,13 +712,13 @@ function viewNewCampaign() {
     <p class="hint">Se crea con un nivel vacío y la abres en modo edición para añadir misiones.</p></section>`;
 }
 function viewHome() {
-  return viewHero() + viewDaily() + viewWeek() + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
+  return viewHero() + viewDaily() + viewRankTeaser() + viewWeek() + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
     <button class="cc add" data-act="toggleNewCampaign">${GLYPH.plus}Nueva campaña</button></div></section>`
     + when(ui.addingCampaign, viewNewCampaign()) + viewInventory();
 }
 function viewNav() {
   const item = (id, label, icon) => `<button data-act="open" data-id="${id}" aria-label="${esc(label)}" ${ui.view === id ? 'aria-current="page"' : ''}>${icon}</button>`;
-  return item('home', 'Inicio', GLYPH.home) + item('shop', 'Tienda', GLYPH.bag) + S.campaigns.map(c => item(c.id, c.name, ICONS[c.icon] || ICONS.star)).join('');
+  return item('home', 'Inicio', GLYPH.home) + item('ranking', 'Ranking', GLYPH.trophy) + item('shop', 'Tienda', GLYPH.bag) + S.campaigns.map(c => item(c.id, c.name, ICONS[c.icon] || ICONS.star)).join('');
 }
 
 // --- Físico
@@ -804,11 +929,19 @@ function viewCampaign(c) {
 
 function render() {
   const campaign = S.campaigns.find(c => c.id === ui.view);
-  if (!campaign && ui.view !== 'shop') ui.view = 'home';
+  if (!campaign && ui.view !== 'shop' && ui.view !== 'ranking') ui.view = 'home';
   const y = window.scrollY;
-  document.getElementById('app').innerHTML = viewTop() + viewAccount() + (campaign ? viewCampaign(campaign) : ui.view === 'shop' ? viewShop() : viewHome())
+  const nav = document.getElementById('nav');
+  if (!S.onboarded) {
+    document.getElementById('app').innerHTML = viewAccount() + viewOnboarding();
+    nav.hidden = true;
+    return;
+  }
+  nav.hidden = false;
+  const main = campaign ? viewCampaign(campaign) : ui.view === 'shop' ? viewShop() : ui.view === 'ranking' ? viewRanking() : viewHome();
+  document.getElementById('app').innerHTML = viewTop() + viewAccount() + main
     + `<datalist id="ex-list">${COMMON_EXERCISES.map(n => `<option value="${n}">`).join('')}</datalist>`;
-  document.getElementById('nav').innerHTML = viewNav();
+  nav.innerHTML = viewNav();
   window.scrollTo(0, y);
   const name = document.getElementById('nc-name');
   if (name && !name.value) name.focus();
@@ -869,7 +1002,13 @@ const actions = {
   syncInfo: repaint(() => { ui.account = !ui.account; }),
   toggleAccount: repaint(() => { ui.account = false; }),
   syncNow: () => { pull(); toast('Sincronizando…'); },
-  signOut: async () => { await cloud.client.auth.signOut(); ui.account = false; render(); toast('Sesión cerrada. Lo tuyo sigue en este dispositivo'); },
+  signOut: async () => {
+    await cloud.client.auth.signOut();
+    // Lo tuyo ya está en tu cuenta: el dispositivo se queda limpio para que otra persona pueda entrar con la suya
+    S = defaultState(); storage.set(STORAGE.state, S); ui.draft = null; saveDraft();
+    Object.assign(ui, { account: false, view: 'home' }); render();
+    toast('Sesión cerrada. Tu progreso está guardado en tu cuenta');
+  },
   signUp: async el => {
     const F = el.closest('form').elements;
     if (!F.email.checkValidity() || !F.password.checkValidity()) { toast('Pon un email y una contraseña de 6 caracteres o más'); return; }
@@ -877,7 +1016,7 @@ const actions = {
     if (error) { toast(authError(error)); return; }
     if (!data.session) toast('Revisa tu correo para confirmar la cuenta y luego dale a Entrar');
   },
-  open: el => { ui.view = el.dataset.id; ui.addingCampaign = false; ui.editing = false; ui.exForm = null; ui.addingReward = false; render(); window.scrollTo(0, 0); },
+  open: el => { if (el.dataset.id === 'ranking') loadRanking(); ui.view = el.dataset.id; ui.addingCampaign = false; ui.editing = false; ui.exForm = null; ui.addingReward = false; render(); window.scrollTo(0, 0); },
   toggleEditing: repaint(() => { ui.editing = !ui.editing; }),
   toggleLevel: el => { const card = el.closest('.lv-card'); ui.open[el.dataset.k] = card.dataset.open !== '1'; render(); },
 
@@ -885,6 +1024,17 @@ const actions = {
   toggleMission: el => hitBoss(el, s => { const { c, m } = findMission(el); m.done = !m.done; m.doneAt = m.done ? Date.now() : null; logActivity(s, c.id, m.done ? 1 : -1); }),
   increment: el => hitBoss(el, s => { const { c, m } = findMission(el); if (m.count < m.target) { m.count++; logActivity(s, c.id, 1); if (m.count >= m.target) m.doneAt = Date.now(); } }),
   decrement: el => hitBoss(el, s => { const { c, m } = findMission(el); if (m.count > 0) { m.count--; logActivity(s, c.id, -1); } }),
+
+  // Perfil, bienvenida y ranking
+  pickOnboardColor: el => { ui.onbColor = el.dataset.k; document.querySelectorAll('.onb .swatches button').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === ui.onbColor)); },
+  toggleStarter: el => { const k = el.dataset.k, on = !ui.onboardCamps[k]; ui.onboardCamps[k] = on; el.classList.toggle('on', on); el.setAttribute('aria-pressed', on); },
+  setProfileColor: el => update(s => { s.color = el.dataset.k; }, { reward: false }),
+  rankTab: repaint(el => { ui.rankTab = el.dataset.k; }),
+  shareApp: async () => {
+    const url = location.origin + location.pathname, text = `Te reto en Modo Campaña. Hazte una cuenta y a ver quién sube más esta semana: ${url}`;
+    try { if (navigator.share) { await navigator.share({ title: 'Modo Campaña', text, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+    try { await navigator.clipboard.writeText(text); toast('Invitación copiada: pégala donde quieras'); } catch (e) { toast(url); }
+  },
 
   // Diarias, cofre, tienda e inventario
   toggleHabit: el => update(s => { const day = dayOf(s), h = (day.habits = day.habits || {}); h[el.dataset.k] = !h[el.dataset.k]; }),
@@ -1064,6 +1214,22 @@ function mergeProgress(cur, inc) {
   return cur;
 }
 const forms = {
+  onboard: (f, F) => {
+    const name = F.n.value.trim();
+    if (!name) { F.n.focus(); return; }
+    update(s => {
+      s.name = name.slice(0, 24); s.color = ui.onbColor || 'lilac'; s.onboarded = true;
+      s.campaigns = s.campaigns.filter(c => ui.onboardCamps[c.id] !== false);
+    }, { reward: false });
+    window.scrollTo(0, 0);
+    toast(`¡Bienvenido, ${name}!`);
+  },
+  saveProfile: (f, F) => {
+    const name = F.n.value.trim();
+    if (!name) return;
+    update(s => { s.name = name.slice(0, 24); }, { reward: false });
+    toast('Perfil guardado');
+  },
   addReward: (f, F) => {
     const name = F.n.value.trim(), cost = Math.max(10, Math.round(num(F.c.value) || 0));
     if (!name || !cost) return;
