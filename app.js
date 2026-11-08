@@ -676,7 +676,7 @@ const actions = {
   signUp: async el => {
     const F = el.closest('form').elements;
     if (!F.email.checkValidity() || !F.password.checkValidity()) { toast('Pon un email y una contraseña de 6 caracteres o más'); return; }
-    const { data, error } = await cloud.client.auth.signUp({ email: F.email.value.trim(), password: F.password.value });
+    const { data, error } = await cloud.client.auth.signUp({ email: F.email.value.trim(), password: F.password.value, options: { emailRedirectTo: location.origin + location.pathname } });
     if (error) { toast(authError(error)); return; }
     if (!data.session) toast('Revisa tu correo para confirmar la cuenta y luego dale a Entrar');
   },
