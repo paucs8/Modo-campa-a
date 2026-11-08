@@ -1,7 +1,7 @@
 """Objetos, cofre, moneda, jefe e icono en pixel art con volumen y contorno de color."""
 from PIL import Image, ImageDraw
 import math
-OUT='/home/claude/modo-campa-a/'
+OUT=''  # ejecutar desde la raíz del repo: python3 tools/art.py
 def hx(h): h=h.lstrip('#'); return tuple(int(h[i:i+2],16) for i in (0,2,4))
 def mul(c,f): return tuple(max(0,min(255,round(v*f))) for v in c)
 def tint(c,f): return tuple(round(v+(255-v)*f) for v in c)
