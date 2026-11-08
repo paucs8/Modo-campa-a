@@ -254,3 +254,8 @@ input,select{font:inherit;border:2px solid var(--soft-line);background:var(--bg)
 .seg span{display:inline-block;border:2px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink)}
 .seg input:checked+span{background:var(--ink);color:var(--on-ink)}
 .seg input:focus-visible+span{outline:3px solid var(--blue);outline-offset:2px}
+
+.import{border-top:2px solid var(--soft-line);padding-top:12px}
+.import summary{cursor:pointer;font-weight:600;font-size:14px}
+.import form{margin-top:10px}
+textarea{font:inherit;font-size:13px;border:2px solid var(--soft-line);background:var(--bg);color:var(--ink);border-radius:14px;padding:9px 12px;width:100%;resize:vertical}

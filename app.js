@@ -383,8 +383,14 @@ function viewTop() {
     <div class="hello"><b>Hola, ${esc(S.name)}</b><span>${esc(d[0].toUpperCase() + d.slice(1))}</span></div>
     <button class="sync" id="sync" data-s="${ui.sync}" title="${SYNC_LABEL[ui.sync]}" aria-label="${SYNC_LABEL[ui.sync]}" data-act="syncInfo"><i></i></button></header>`;
 }
+const viewImport = () => html`<details class="import"><summary>Traer progreso de otra versión</summary>
+    <form class="stack-s" data-form="importProgress"><textarea name="code" rows="3" placeholder="Pega aquí el código" aria-label="Código de progreso" required></textarea>
+    <button class="btn">Importar</button><p class="hint">Se junta con lo que ya tienes aquí: no se borra nada.</p></form></details>`;
 function viewAccount() {
   if (!ui.account) return '';
+  return viewAccountBody().replace(/<\/section>$/, viewImport() + '</section>');
+}
+function viewAccountBody() {
   if (ui.sync === 'off') return html`<section class="panel"><h3>Sincronización</h3><p class="hint">Falta configurar Supabase. Mientras tanto, todo se guarda en este dispositivo.</p></section>`;
   if (cloud.user) return html`<section class="panel"><h3>Tu cuenta <button class="btn ghost" data-act="toggleAccount">Cerrar</button></h3>
     <p class="hint">Conectado como <b>${esc(cloud.user.email || '')}</b>. ${SYNC_LABEL[ui.sync]}.</p>
@@ -771,7 +777,73 @@ const authError = e => /invalid login/i.test(e.message) ? 'Email o contraseña i
   : /not confirmed/i.test(e.message) ? 'Confirma tu email desde el correo que te llegó'
   : /already registered/i.test(e.message) ? 'Ya existe esa cuenta: dale a Entrar'
   : 'No se pudo: ' + e.message;
+/** Lee un código "MC1." (JSON comprimido) o JSON directo. */
+async function decodeProgress(code) {
+  const text = code.trim();
+  if (text.startsWith('{')) return JSON.parse(text);
+  const b64 = text.replace(/^MC1\./, '').replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return JSON.parse(await new Response(stream).text());
+}
+/** Junta otro progreso con el actual sin perder nada de ninguno de los dos. */
+function mergeProgress(cur, inc) {
+  inc = migrate(JSON.parse(JSON.stringify(inc)));
+  const byKey = (list, key) => new Map(list.map(x => [key(x), x]));
+  // Peso y entrenos
+  cur.weight.start = cur.weight.start ?? inc.weight.start;
+  cur.weight.goal = cur.weight.goal ?? inc.weight.goal;
+  const log = byKey(inc.weight.log, p => p.d);
+  cur.weight.log.forEach(p => log.set(p.d, p));
+  cur.weight.log = [...log.values()].sort((a, b) => a.d.localeCompare(b.d));
+  if (cur.weight.log.length && inc.weight.start != null && inc.weight.log[0] && inc.weight.log[0].d <= cur.weight.log[0].d) cur.weight.start = inc.weight.start;
+  cur.train = [...new Set([...cur.train, ...inc.train])].sort();
+  // Rutinas: las importadas mandan (las sesiones apuntan a sus ejercicios) y se añade lo que solo existía aquí
+  const routines = inc.routines;
+  cur.routines.forEach(r => {
+    const twin = routines.find(x => x.id === r.id || x.name === r.name);
+    if (!twin) { routines.push(r); return; }
+    r.exercises.forEach(x => { if (!twin.exercises.some(y => y.id === x.id || y.name === x.name)) twin.exercises.push(x); });
+  });
+  // Ejercicios con el mismo nombre en las dos versiones: las sesiones de aquí pasan a apuntar al importado
+  const alias = {};
+  cur.routines.forEach(r => r.exercises.forEach(x => {
+    const twin = routines.flatMap(y => y.exercises).find(y => y.name === x.name);
+    if (twin && twin.id !== x.id) alias[x.id] = twin.id;
+  }));
+  const sessions = byKey(inc.sessions, x => x.id);
+  cur.sessions.forEach(x => {
+    const ex = {}; Object.entries(x.ex).forEach(([k, v]) => { ex[alias[k] || k] = v; });
+    sessions.set(x.id, Object.assign({}, x, { ex }));
+  });
+  cur.routines = routines;
+  cur.sessions = [...sessions.values()].sort((a, b) => a.d.localeCompare(b.d));
+  // Campañas: misiones emparejadas por nivel y nombre
+  inc.campaigns.forEach(ic => {
+    const c = cur.campaigns.find(x => x.id === ic.id || x.name === ic.name);
+    if (!c) { cur.campaigns.push(ic); return; }
+    ic.levels.forEach(il => {
+      const l = c.levels.find(x => x.name === il.name);
+      if (!l) { c.levels.push(il); return; }
+      il.missions.forEach(im => {
+        const m = l.missions.find(x => x.name === im.name && (x.target || 0) === (im.target || 0));
+        if (!m) { l.missions.push(im); return; }
+        if (im.done && !m.done) { m.done = true; m.doneAt = im.doneAt; }
+        if (m.type === 'count') m.count = Math.max(m.count || 0, im.count || 0);
+      });
+    });
+  });
+  return cur;
+}
 const forms = {
+  importProgress: async (f, F) => {
+    let incoming;
+    try { incoming = await decodeProgress(F.code.value); } catch (e) { toast('Ese código no es válido. Cópialo entero'); return; }
+    if (!incoming || !Array.isArray(incoming.campaigns)) { toast('Ese código no es válido. Cópialo entero'); return; }
+    update(s => mergeProgress(s, incoming));
+    ui.account = false; render(); window.scrollTo(0, 0);
+    toast('Progreso importado');
+  },
   signIn: async (f, F) => {
     const { error } = await cloud.client.auth.signInWithPassword({ email: F.email.value.trim(), password: F.password.value });
     if (error) toast(authError(error)); else toast('Conectado. Sincronizando…');
