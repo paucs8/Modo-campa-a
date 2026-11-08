@@ -73,16 +73,34 @@ function paint(L) {
     z = 6; hline(66, 20, 43, INK); hline(67, 20, 43, INK); hline(66, 30, 33, METAL); hline(67, 30, 33, METAL);
   }
 
-  // ---- Zapatillas gordas o botas
-  const foot = (a, b, zz) => {
+  // ---- Zapatillas gordas o botas: salen de debajo de cada pierna, con su mismo ancho
+  const skirt = L.bottomType === 'falda', boots = L.shoeType === 'botas';
+  const foot = (a, b, left, zz) => {
+    // a,b = ancho de la pierna (o del bajo del pantalón) justo encima del pie
+    const y0 = skirt ? 114 : 113, toe = left ? -1 : 1;
+    if (boots && skirt) form(101, 116, y => [a, b], shoe, zz, { color: (x, y, c) => (y === 101 ? shoe.s2 : y === 104 && (x + 1) % 3 === 0 ? METAL : null) });
+    form(y0, 121, y => {
+      const r = y - y0, inset = r === 0 ? 2 : r === 1 ? 1 : 0, out = r >= 4 ? 1 : 0;
+      const lo = left ? a - 1 - out : a, hi = left ? b : b + 1 + out;   // el lado de dentro no crece, así los pies no se juntan
+      return [lo + inset, hi - inset];
+    }, shoe, zz, {
+      color: (x, y, c) => {
+        if (boots) return y === y0 + 3 ? shoe.s1 : null;
+        if (y >= y0 + 1 && y <= y0 + 3 && x > a + 1 && x < b - 1 && (x + y) % 3 === 0) return shoe.s2;   // cordones
+        if (y === 118 && x > a && x < b) return shoe.s1;                                                // pala
+        return null;
+      } });
     z = zz;
-    if (L.shoeType === 'botas') { form(104, 120, y => [a + 2, b - 2], shoe, zz); }
-    const left = a < 32;
-    form(113, 121, y => [a - (y > 117 ? 1 : 0) + (y === 113 ? 3 : 0) - (left && y > 116 ? 1 : 0), b + (y > 117 ? 1 : 0) - (y === 113 ? 3 : 0) + (!left && y > 116 ? 1 : 0)], shoe, zz, {
-      color: (x, y, c) => (L.shoeType !== 'botas' && y >= 114 && y <= 116 && x > a + 3 && x < b - 3 && (x + y) % 3 === 0 ? shoe.s2 : (L.shoeType !== 'botas' && y === 118 && x > a + 1 && x < b - 1 ? shoe.s1 : null)) });
-    z = zz; hline(122, a - 1, b + 1, L.shoeType === 'botas' ? INK : [214, 206, 192]); hline(123, a - 1, b + 1, L.shoeType === 'botas' ? INK : [176, 168, 154]);
+    const s0 = left ? a - 2 : a, s1 = left ? b : b + 2;
+    hline(122, s0, s1, boots ? INK : [214, 206, 192]); hline(123, s0, s1, boots ? INK : [176, 168, 154]);
+    void toe;
   };
-  foot(12, 29, 7); foot(34, 51, 8);
+  if (skirt) { foot(24, 30, true, 7); foot(33, 39, false, 8); }
+  else {
+    // el pantalón tapa el empeine: el pie va por debajo (z menor) y asoma bajo el bajo
+    foot(14, 28, true, 2); foot(35, 49, false, 3);
+    z = 6; hline(116, 13, 30, mul(bot.s2, 0.8)); hline(116, 33, 50, mul(bot.s2, 0.8));   // sombra del bajo sobre la zapatilla
+  }
 
   // ---- Torso: sudadera ancha / capas
   const longSleeve = L.topType !== 'camiseta';
