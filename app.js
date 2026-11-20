@@ -239,7 +239,7 @@ function migrate(s) {
   delete s.look.preset; delete s.look.star;
   s.look = Character.upgrade(s.look); // personaje por capas (v2)
   // Armario especial, semanas ganadas, cierre del lunes visto y cañas enviadas
-  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {}; s.feedSent = s.feedSent || {}; s.shields = s.shields || 0; s.shielded = s.shielded || []; s.coinLog = s.coinLog || []; s.duelsSettled = s.duelsSettled || {}; s.duelBase = s.duelBase || {}; s.vouchersDone = s.vouchersDone || {}; s.rivals = s.rivals || []; if (s.rivalsOnly === undefined) s.rivalsOnly = true;
+  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {}; s.feedSent = s.feedSent || {}; s.shields = s.shields || 0; s.shielded = s.shielded || []; s.coinLog = s.coinLog || []; s.duelsSettled = s.duelsSettled || {}; s.duelBase = s.duelBase || {}; s.vouchersDone = s.vouchersDone || {}; s.rivals = s.rivals || []; s.passed = s.passed || {}; if (s.rivalsOnly === undefined) s.rivalsOnly = true;
   if (s.photo === undefined) s.photo = null;
   s.v = 5;
   return s;
@@ -520,6 +520,7 @@ function grantUnlocks() {
 let duelSyncTimer = null;
 function persist() {
   grantUnlocks();
+  if (avisos.endpoint) { clearTimeout(pushTimer); pushTimer = setTimeout(pushSync, 2000); }
   if (ui.duels) { clearTimeout(duelSyncTimer); duelSyncTimer = setTimeout(syncDuels, 1500); }
   S.updatedAt = Date.now();
   S.xpDays[today()] = totalXP();
@@ -677,6 +678,68 @@ function settleVouchers() {
       persist(); setTimeout(() => toast(`${v.to_name} no puede ahora. Te devolvemos ${v.cost} monedas`), 800);
     }
   });
+}
+
+/* ---------- Avisos al móvil (push): recordatorio diario y avisos de amigos ---------- */
+const PUSH_KEY = 'modo-campana-avisos';   // de este dispositivo, no se sincroniza
+const PUSH_KINDS = { reminder: 'Recordatorio diario', nudge: 'Cuando te dan caña', overtake: 'Cuando te pasan en la liga', duel: 'Duelos', invite: 'Invitaciones', react: 'Reacciones a tus logros' };
+let avisos = { endpoint: null, hour: 20, kinds: Object.keys(PUSH_KINDS) };
+try { avisos = Object.assign(avisos, JSON.parse(localStorage.getItem(PUSH_KEY) || '{}')); } catch (e) { /* sin almacenamiento */ }
+const savePushLocal = () => { try { localStorage.setItem(PUSH_KEY, JSON.stringify(avisos)); } catch (e) { /* sin almacenamiento */ } };
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && !!CONFIG.vapidPublicKey;
+const isStandalone = () => (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
+const b64ToBytes = b64 => { const s = atob((b64 + '='.repeat((4 - b64.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(s, ch => ch.charCodeAt(0)); };
+const allDailyDone = () => dailyQuests().every(q => questDone(q));
+function pushRow() {
+  return { endpoint: avisos.endpoint, user_id: cloud.user.id, hour: avisos.hour, kinds: avisos.kinds, rivals: S.rivals, done_day: allDailyDone() ? today() : null, updated_at: new Date().toISOString() };
+}
+async function enablePush() {
+  if (!cloud.user) { toast('Entra con tu cuenta para activar los avisos'); return; }
+  if (!pushSupported()) { toast('Este navegador no permite avisos'); return; }
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') { toast('Sin permiso no te puedo avisar. Actívalo en los ajustes del móvil'); render(); return; }
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CONFIG.vapidPublicKey) });
+    const j = sub.toJSON();
+    avisos.endpoint = sub.endpoint; savePushLocal();
+    const { error } = await cloud.client.from('push_subs').upsert(Object.assign(pushRow(), { p256dh: j.keys.p256dh, auth: j.keys.auth }));
+    if (error) { toast(missingTable(error) ? 'Falta activar los avisos en Supabase' : 'No se pudieron guardar los avisos'); return; }
+    toast('🔔 Avisos activados en este móvil'); render();
+  } catch (e) { toast('No se pudieron activar los avisos'); }
+}
+async function disablePush() {
+  try { const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription(); if (sub) await sub.unsubscribe(); } catch (e) { /* ya no estaba */ }
+  if (avisos.endpoint && cloud.user) await cloud.client.from('push_subs').delete().eq('endpoint', avisos.endpoint);
+  avisos.endpoint = null; savePushLocal(); render(); toast('Avisos desactivados en este móvil');
+}
+let pushSent = '', pushTimer = null;
+/** Mantiene al día lo que el servidor necesita: si ya has hecho las misiones de hoy, tus rivales y tus preferencias. */
+function pushSync(force) {
+  if (!avisos.endpoint || !cloud.user) return;
+  const row = pushRow(), key = JSON.stringify([row.hour, row.kinds, row.rivals, row.done_day]);
+  if (!force && key === pushSent) return;
+  pushSent = key;
+  cloud.client.from('push_subs').update(row).eq('endpoint', avisos.endpoint).then(() => {});
+}
+/** Avisa a otro jugador en su móvil (si lo tiene activado y quiere ese tipo de aviso). */
+function notify(to, kind, title, text) {
+  if (!cloud.user || !to || to === cloud.user.id || !cloud.client.functions) return;
+  cloud.client.functions.invoke('push', { body: { to, kind, title, text } }).catch(() => {});
+}
+/** Si con lo que acabas de hacer pasas a alguien en la liga semanal, le llega un aviso (una vez por semana y persona). */
+function checkOvertakes(weekBefore, weekAfter) {
+  if (!cloud.user || !ui.ranking || weekAfter <= weekBefore) return;
+  const monday = mondayKey(), done = (S.passed[monday] = S.passed[monday] || []);
+  ui.ranking.forEach(r => {
+    if (r.user_id === cloud.user.id || r.week !== monday || done.includes(r.user_id)) return;
+    if (r.week_xp >= weekBefore && r.week_xp < weekAfter && r.week_xp > 0) {
+      done.push(r.user_id);
+      notify(r.user_id, 'overtake', `🏃 ${S.name} te ha pasado en la liga`, `Ahora va por delante con ${weekAfter} XP esta semana. ¡Recupera tu puesto!`);
+    }
+  });
+  Object.keys(S.passed).forEach(k => { if (k !== monday) delete S.passed[k]; });
 }
 
 /* ---------- Muro de actividad: lo que va consiguiendo cada uno, con reacciones ---------- */
@@ -896,9 +959,10 @@ document.addEventListener('focusout', () => setTimeout(() => {
 
 /** Única puerta para cambiar datos: aplica el cambio, guarda, repinta y premia. */
 function update(change, { reward = true } = {}) {
-  const before = totalXP(), readyBefore = chestReady(), levelsBefore = clearedLevels();
+  const before = totalXP(), readyBefore = chestReady(), levelsBefore = clearedLevels(), weekBefore = weekXP();
   change(S);
   announceProgress(levelsBefore, before);
+  checkOvertakes(weekBefore, weekXP());
   persist();
   render();
   if (!readyBefore && chestReady()) setTimeout(() => toast('¡Cofre del día listo! Ábrelo en Inicio'), reward ? 2000 : 0);
@@ -1041,12 +1105,27 @@ function viewProfile() {
         <div class="look-controls">${viewLookControls(L)}</div></div>
       <p class="hint">Lo que desbloqueas en el inventario (cascos, llavero, handycam, skate) se lo pone tu personaje.</p></section>
     <button class="teaser idea-teaser" data-act="open" data-id="ideas"><span class="teaser-ico">${GLYPH.star || '+'}</span><span class="txt"><b>Buzón de ideas</b><small>¿Echas algo en falta? Una campaña, un deporte, algo de la app…</small></span><span class="go">${GLYPH.chev}</span></button>
+${viewPushPanel()}
     <section class="panel"><h3>Cuenta</h3>
       ${cloud.user ? html`<p class="hint">Conectado como <b>${esc(cloud.user.email || '')}</b>. ${SYNC_LABEL[ui.sync]}.</p>
         <div class="edit-row"><button class="btn danger" data-act="signOut">Cerrar sesión</button></div>
         ${when(!ui.profileExtras, '<p class="hint">Para que los demás vean tu foto y tu personaje en el ranking, falta ejecutar <b>supabase-perfil.sql</b> en Supabase.</p>')}`
         : ui.sync === 'off' ? '<p class="hint">Sin conexión con Supabase: todo se guarda en este dispositivo.</p>'
         : '<p class="hint">Crea una cuenta para guardar tu progreso, usarlo en varios dispositivos y salir en el ranking.</p><button class="btn primary" data-act="syncInfo">Crear cuenta o entrar</button>'}</section>`;
+}
+function viewPushPanel() {
+  const on = !!avisos.endpoint && (!('Notification' in window) || Notification.permission === 'granted');
+  let body;
+  if (!cloud.user) body = '<p class="hint">Entra con tu cuenta para recibir avisos en el móvil.</p>';
+  else if (isIOS() && !isStandalone()) body = '<p class="hint">En iPhone los avisos solo funcionan con la app añadida a la pantalla de inicio. Ábrela desde el icono y vuelve aquí.</p>';
+  else if (!pushSupported()) body = '<p class="hint">Este navegador no permite avisos. Prueba desde la app instalada o con Chrome.</p>';
+  else if ('Notification' in window && Notification.permission === 'denied') body = '<p class="hint">Has bloqueado los avisos. Actívalos en los ajustes del móvil (Notificaciones → Modo Campaña) y vuelve aquí.</p>';
+  else if (!on) body = '<p class="hint">Te aviso si se te olvidan las misiones del día, si te pasan en la liga o si te retan. Tú eliges cuáles.</p><button class="btn primary wide" data-act="pushOn">🔔 Activar avisos en este móvil</button>';
+  else body = html`<label class="fld"><span>Recordatorio diario a las</span><select data-act-change="pushHour">${Array.from({ length: 16 }, (_, i) => i + 8).map(h => `<option value="${h}" ${avisos.hour === h ? 'selected' : ''}>${h}:00</option>`)}</select></label>
+    <span class="label">Quiero que me avises de</span><div class="chips">${Object.entries(PUSH_KINDS).map(([k, t]) => `<button class="chip-btn" data-act="pushKind" data-k="${k}" aria-pressed="${avisos.kinds.includes(k)}">${t}</button>`).join('')}</div>
+    <p class="hint">El recordatorio solo llega si aún no has hecho las misiones de ese día. ${S.rivals.length ? 'Los avisos de la liga, la caña y las reacciones solo llegan de tus rivales.' : ''}</p>
+    <div class="edit-row"><button class="btn" data-act="pushTest">Probar aviso</button><button class="btn ghost" data-act="pushOff">Desactivar</button></div>`;
+  return html`<section class="panel push-panel"><h3>Avisos <span class="label">${on ? '🔔 activados' : 'desactivados'}</span></h3>${body}</section>`;
 }
 function viewIdeas() {
   const kinds = Object.entries(IDEA_KINDS).map(([k, t]) => `<button type="button" class="chip-btn" data-act="ideaKind" data-k="${k}" aria-pressed="${ui.ideaKind === k}">${t}</button>`).join('');
@@ -1804,6 +1883,7 @@ const actions = {
   toggleAccount: repaint(() => { ui.account = false; }),
   syncNow: () => { pull(); toast('Sincronizando…'); },
   signOut: async () => {
+    if (avisos.endpoint) { await cloud.client.from('push_subs').delete().eq('endpoint', avisos.endpoint); avisos.endpoint = null; savePushLocal(); }
     await cloud.client.auth.signOut();
     // Lo tuyo ya está en tu cuenta: el dispositivo se queda limpio para que otra persona pueda entrar con la suya
     S = defaultState(); storage.set(STORAGE.state, S); ui.draft = null; saveDraft();
@@ -1854,6 +1934,7 @@ const actions = {
     if (error) { toast(missingTable(error) ? 'Para esto falta ejecutar supabase-social.sql en Supabase' : 'No se ha podido enviar. Prueba otra vez'); return; }
     update(s => { s.nudgesSent[to] = today(); }, { reward: false });
     const r = (ui.ranking || []).find(x => x.user_id === to);
+    notify(to, 'nudge', `💪 ${S.name} te da caña`, '¡Vamos! Haz algo hoy y súbete al ranking.');
     toast(`Le has dado caña a ${r ? r.name : 'tu amigo'}`);
   },
   fold: el => {
@@ -2005,6 +2086,7 @@ const actions = {
     if (error) { toast(missingTable(error) ? 'Falta activar las invitaciones en Supabase' : 'No se pudo canjear'); el.disabled = false; return; }
     update(s => { s.purchases.push({ id: uid(), name: `${it.name} con ${f.name}`, cost: it.cost, d: today(), voucher: data && data.id }); }, { reward: false });
     ui.invite = null; toast(`🎁 Vale enviado: ${f.name} te invita ${it.verb}`); loadVouchers();
+    notify(f.user_id, 'invite', `🎁 ${S.name} ha canjeado un vale`, `Te toca invitarle ${it.verb}.`);
   },
   voucherDone: async el => {
     const v = (ui.vouchers || []).find(x => String(x.id) === el.dataset.id); if (!v) return;
@@ -2013,6 +2095,7 @@ const actions = {
     v.status = 'done';
     if (!S.vouchersDone[v.id]) { S.vouchersDone[v.id] = 'thanks'; const bonus = Math.round(v.cost * THANKS); update(s => { s.coinLog.push({ id: uid(), d: today(), amount: bonus, note: `Gracias por invitar a ${v.from_name}` }); }, { reward: false }); toast(`¡Bien hecho! +${bonus} monedas`); }
     postFeed('invite', `ha invitado a ${v.from_name} ${inviteOf(v.reward).verb}`, 'voucher:' + v.id);
+    notify(v.from_id, 'invite', `🎉 ${S.name} ha cumplido tu vale`, `Ya te ha invitado ${inviteOf(v.reward).verb}. ¡Disfrútalo!`);
     loadVouchers();
   },
   deleteVoucher: async el => {
@@ -2021,6 +2104,13 @@ const actions = {
     ui.armed = null;
     const { error } = await cloud.client.from('vouchers').update({ status: 'declined' }).eq('id', v.id);
     if (error) toast('No se pudo'); else loadVouchers();
+  },
+  pushOn: () => enablePush(),
+  pushOff: () => disablePush(),
+  pushKind: el => { const k = el.dataset.k; avisos.kinds = avisos.kinds.includes(k) ? avisos.kinds.filter(x => x !== k) : [...avisos.kinds, k]; savePushLocal(); pushSync(true); render(); },
+  pushTest: async () => {
+    try { const reg = await navigator.serviceWorker.ready; await reg.showNotification('🔔 Así te llegarán los avisos', { body: 'Todo listo. Te avisaré cuando haga falta.', icon: 'icons/icon-192-cofre.png', badge: 'icons/favicon-cofre.png' }); }
+    catch (e) { toast('No se pudo mostrar el aviso'); }
   },
   toggleRival: el => {
     const id = el.dataset.id;
@@ -2043,6 +2133,7 @@ const actions = {
     const { error } = await cloud.client.from('duels').insert({ challenger: cloud.user.id, opponent: r.user_id, challenger_name: S.name, opponent_name: r.name, metric: f.metric, stake: f.stake });
     if (error) { toast(missingTable(error) ? 'Falta activar los duelos en Supabase' : 'No se pudo enviar el reto'); el.disabled = false; return; }
     toast(`⚔️ Reto enviado a ${r.name}`); loadDuels();
+    notify(r.user_id, 'duel', `⚔️ ${S.name} te reta a un duelo`, `Una semana de ${DUEL_METRIC[f.metric].desc}${f.stake ? ` con ${f.stake} monedas en juego` : ''}. ¿Aceptas?`);
   },
   acceptDuel: async el => {
     const d = (ui.duels || []).find(x => String(x.id) === el.dataset.id); if (!d) return;
@@ -2051,6 +2142,7 @@ const actions = {
     const { error } = await cloud.client.from('duels').update(patch).eq('id', d.id);
     if (error) { toast('No se pudo aceptar'); return; }
     Object.assign(d, patch); toast('⚔️ ¡Duelo aceptado! Tenéis 7 días'); syncDuels(); render();
+    notify(d.challenger, 'duel', `⚔️ ${S.name} ha aceptado tu duelo`, 'Tenéis 7 días. ¡Que empiece!');
   },
   declineDuel: async el => {
     const d = (ui.duels || []).find(x => String(x.id) === el.dataset.id); if (!d) return;
@@ -2067,6 +2159,7 @@ const actions = {
     const q = cloud.client.from('feed_reactions');
     const { error } = mine ? await q.delete().eq('feed_id', f.id).eq('user_id', cloud.user.id).eq('emoji', e) : await q.insert({ feed_id: f.id, user_id: cloud.user.id, emoji: e });
     if (error) { toast('No se pudo reaccionar'); loadFeed(); }
+    else if (!mine) notify(f.user_id, 'react', `${e} A ${S.name} le mola tu logro`, `${f.text.charAt(0).toUpperCase() + f.text.slice(1)}`.replace(/^Ha /, 'Has '));
   },
   openStats: el => { ui.exStats = el.dataset.id; render(); },
   closeStats: () => { const sh = document.querySelector('.sheet'); if (sh) { sh.classList.add('out'); document.querySelector('.sheet-bg').classList.add('out'); setTimeout(() => { ui.exStats = null; render(); }, 220); } else { ui.exStats = null; render(); } },
@@ -2299,6 +2392,9 @@ document.addEventListener('input', ev => {
   if (!t.dataset.f || !d || !d.ex[t.dataset.x]) return;
   const row = d.ex[t.dataset.x][+t.dataset.i];
   if (row) { row[t.dataset.f] = t.value; saveDraft(); }
+});
+document.addEventListener('change', ev => {
+  if (ev.target.dataset && ev.target.dataset.actChange === 'pushHour') { avisos.hour = +ev.target.value; savePushLocal(); pushSync(true); toast(`Te recordaré a las ${avisos.hour}:00 si te faltan misiones`); return; }
 });
 document.addEventListener('change', ev => {
   const t = ev.target, form = t.closest('.exform');

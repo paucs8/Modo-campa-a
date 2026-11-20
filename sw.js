@@ -1,6 +1,6 @@
 // Guarda la app en el móvil para que abra rápido y funcione sin conexión.
 // Al cambiar cualquier archivo, sube VERSION para que los móviles descarguen la nueva.
-const VERSION = 'v31';
+const VERSION = 'v32';
 const CACHE = `modo-campana-${VERSION}`;
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'config.js', 'character.js', 'scene.js', 'manifest.webmanifest',
@@ -38,4 +38,22 @@ self.addEventListener('fetch', event => {
       })
       .catch(() => caches.match(request).then(hit => hit || (request.mode === 'navigate' ? caches.match('index.html') : Response.error())))
   );
+});
+
+// Avisos al móvil: se muestran aunque la app esté cerrada
+self.addEventListener('push', event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { data = { title: 'Modo Campaña', body: event.data ? event.data.text() : '' }; }
+  event.waitUntil(self.registration.showNotification(data.title || 'Modo Campaña', {
+    body: data.body || '', icon: 'icons/icon-192-cofre.png', badge: 'icons/favicon-cofre.png',
+    tag: data.tag || 'modo-campana', renotify: true, data: { url: data.url || './' },
+  }));
+});
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const url = new URL((event.notification.data && event.notification.data.url) || './', self.registration.scope).href;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const open = list.find(c => c.url.startsWith(self.registration.scope));
+    return open ? open.focus() : self.clients.openWindow(url);
+  }));
 });
