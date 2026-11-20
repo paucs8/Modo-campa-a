@@ -1149,13 +1149,13 @@ function viewMission(c, l, m) {
     <div class="txt"><span>${title}</span>${detail}${doneDate}</div>
     ${ui.editing ? confirmBtn('deleteMission', m.id, 'Quitar') : control}<span class="xp">+${m.xp}</span></li>`;
 }
-function viewLevel(c, l, i, current) {
+function viewLevel(c, l, i, current, forceOpen = false) {
   const p = levelProgress(l), done = l.missions.length && p >= 1, state = done ? 'done' : i === current ? 'current' : 'upcoming';
-  const key = c.id + l.id, open = ui.open[key] ?? state === 'current';
+  const key = c.id + l.id, open = forceOpen || (ui.open[key] ?? state === 'current');
   const left = l.missions.filter(m => !isDone(m)).length, xp = l.missions.reduce((a, m) => a + m.xp, 0);
   const status = !l.missions.length ? 'Sin misiones' : `${done ? 'Superado' : (state === 'current' ? 'En curso · ' : '') + left + ' por hacer'} · ${xp} XP`;
   return html`<div class="lv-card ${state}" data-open="${open ? 1 : 0}" ${state === 'current' ? `style="--cbg:${colorVar(c)}"` : ''}>
-    <button class="lv-h" data-act="toggleLevel" data-k="${key}" aria-expanded="${open}"><span class="lv-n">${done ? GLYPH.star : i + 1}</span><div class="t"><b>${esc(l.name)}</b><small>${status}</small></div><span class="chev">${GLYPH.chev}</span></button>
+    <button class="lv-h" ${forceOpen ? 'tabindex="-1"' : `data-act="toggleLevel" data-k="${key}" aria-expanded="${open}"`}><span class="lv-n">${done ? GLYPH.star : i + 1}</span><div class="t"><b>${esc(l.name)}</b><small>${status}</small></div>${forceOpen ? '' : `<span class="chev">${GLYPH.chev}</span>`}</button>
     ${when(open, html`<ul class="missions">${l.missions.map(m => viewMission(c, l, m))}</ul>
       ${when(ui.editing, html`<form class="addm" data-form="addMission" data-c="${c.id}" data-l="${l.id}"><input name="n" placeholder="Nueva misión" maxlength="80" required>
         <input name="t" type="number" min="1" max="999" placeholder="Veces" title="Déjalo vacío si es de una sola vez">
@@ -1164,8 +1164,31 @@ function viewLevel(c, l, i, current) {
 }
 function viewMap(c) {
   const current = currentLevelIndex(c);
-  return html`<section class="stack"><div class="edit-row spread"><h2 class="sec-t">Niveles</h2>${when(ui.editing, '<button class="btn" data-act="addLevel">+ Nivel</button>')}</div>
-    <div class="map">${c.levels.map((l, i) => viewLevel(c, l, i, current))}</div></section>`;
+  const head = html`<div class="edit-row spread"><h2 class="sec-t">Niveles</h2>${when(ui.editing, '<button class="btn" data-act="addLevel">+ Nivel</button>')}</div>`;
+  // Editando: la lista de siempre, que es más cómoda para añadir y borrar
+  if (ui.editing) return html`<section class="stack">${head}<div class="map">${c.levels.map((l, i) => viewLevel(c, l, i, current))}</div></section>`;
+  // Jugando: un camino con un nodo por nivel, tu personaje en el que vas y el jefe al final
+  const n = c.levels.length, ROW = 104, X = [50, 76, 50, 24], sel = Math.min((ui.mapSel || {})[c.id] ?? current, n - 1);
+  const pts = c.levels.map((_, i) => [X[i % 4], i * ROW + ROW / 2]);
+  const seg = (a, b) => `M${a[0]} ${a[1]} C${a[0]} ${a[1] + ROW / 2} ${b[0]} ${b[1] - ROW / 2} ${b[0]} ${b[1]}`;
+  const all = pts.slice(1).map((p, i) => seg(pts[i], p)).join(' ');
+  const walked = pts.slice(1, current + 1).map((p, i) => seg(pts[i], p)).join(' ');
+  const b = boss(c), m = mood();
+  const nodes = c.levels.map((l, i) => {
+    const p = levelProgress(l), done = l.missions.length && p >= 1, state = done ? 'done' : i === current ? 'current' : i < current ? 'done' : 'upcoming';
+    const isBoss = b && b.level === l, side = X[i % 4] > 50 ? 'left' : 'right';
+    const face = isBoss && !done ? `<img class="node-boss ${b.hp === 0 ? 'weak' : ''}" src="${IMG.boss}" alt="">` : done ? GLYPH.star : i + 1;
+    const ring = state === 'current' && l.missions.length ? `<svg class="node-ring" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="16" pathLength="100" stroke-dasharray="${Math.round(p * 100)} 100"/></svg>` : '';
+    return html`<div class="node-wrap" style="left:${X[i % 4]}%;top:${i * ROW + ROW / 2}px">
+      <button class="node ${state} ${i === sel ? 'sel' : ''} ${isBoss ? 'is-boss' : ''}" data-act="pickLevel" data-k="${i}" aria-pressed="${i === sel}" aria-label="Nivel ${i + 1}: ${esc(l.name)}" ${state === 'current' ? `style="--node:${colorVar(c)}"` : ''}>${ring}<span>${face}</span></button>
+      <span class="node-name ${side}">${esc(l.name)}</span>
+      ${when(i === current && !(b && b.defeated), `<div class="node-me ${side === 'left' ? 'right' : 'left'} mood-${m.kind}" aria-hidden="true"><img src="${Character.image(S.look, { items: wearing(), mood: m.kind })}" alt=""></div>`)}</div>`;
+  });
+  return html`<section class="stack">${head}
+    <div class="path" style="height:${n * ROW}px;--cc:${colorVar(c)}">
+      <svg class="path-line" viewBox="0 0 100 ${n * ROW}" preserveAspectRatio="none" aria-hidden="true"><path class="todo" d="${all}"/>${when(walked, `<path class="walked" d="${walked}"/>`)}</svg>
+      ${nodes}</div>
+    <div class="map">${viewLevel(c, c.levels[sel], sel, current, true)}</div></section>`;
 }
 function viewBoss(c) {
   const b = boss(c);
@@ -1362,6 +1385,7 @@ const actions = {
   },
   open: el => { if (el.dataset.id === 'ranking') loadRanking(); if (el.dataset.id === 'ideas') loadIdeas(); ui.view = el.dataset.id; ui.addingCampaign = false; ui.editing = false; ui.exForm = null; ui.addingReward = false; render(); window.scrollTo(0, 0); },
   toggleEditing: repaint(() => { ui.editing = !ui.editing; }),
+  pickLevel: el => { ui.mapSel = ui.mapSel || {}; ui.mapSel[ui.view] = +el.dataset.k; render(); const card = document.querySelector('.map .lv-card'); if (card) { card.classList.add('swap'); if (card.getBoundingClientRect().top > innerHeight - 160) card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } },
   toggleLevel: el => { const card = el.closest('.lv-card'); ui.open[el.dataset.k] = card.dataset.open !== '1'; render(); },
 
   // Misiones

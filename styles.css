@@ -617,3 +617,45 @@ body{isolation:isolate}
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+
+/* Mapa de niveles: camino con nodos, tu personaje y el jefe al final */
+.path{position:relative;margin:4px 0 2px}
+.path-line{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.path-line path{fill:none;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.path-line .todo{stroke:var(--soft-line);stroke-width:6;stroke-dasharray:2 12}
+.path-line .walked{stroke:var(--cc);stroke-width:8;filter:drop-shadow(0 3px 6px color-mix(in srgb, var(--cc) 60%, transparent))}
+.node-wrap{position:absolute;transform:translate(-50%,-50%);width:66px;height:66px}
+.node{position:relative;width:66px;height:66px;border-radius:50%;border:0;padding:0;display:grid;place-items:center;font-weight:800;font-size:22px;
+  background:var(--surface);color:var(--muted);box-shadow:inset 0 -6px 0 rgba(0,0,0,.12), 0 0 0 3px var(--bg);transition:transform .2s var(--spring)}
+.node>span{display:grid;place-items:center;position:relative;z-index:1}
+.node svg{width:26px;height:26px}
+.node.done{background:linear-gradient(160deg,#2a2a2a,#111);color:var(--lime)}
+.node.current{background:var(--node);color:#111;box-shadow:inset 0 -6px 0 rgba(0,0,0,.18), 0 0 0 3px var(--bg), 0 0 0 9px color-mix(in srgb, var(--node) 35%, transparent);animation:nodepulse 2.2s ease-in-out infinite}
+.node.upcoming{border:3px dashed var(--soft-line);background:var(--bg)}
+.node.sel{transform:scale(1.12)}
+.node.sel::after{content:"";position:absolute;inset:-9px;border-radius:50%;border:3px solid var(--ink);opacity:.85}
+.node.current.sel::after{inset:-13px}
+.node:active{transform:scale(.94)}
+.node-ring{position:absolute;inset:-6px;width:calc(100% + 12px)!important;height:calc(100% + 12px)!important;transform:rotate(-90deg);pointer-events:none}
+.node-ring circle{fill:none;stroke:#111;stroke-width:3;stroke-linecap:round;opacity:.75}
+.node-boss{width:46px;height:auto;image-rendering:pixelated}
+.node-boss.weak{animation:shake .5s steps(2) infinite}
+.node.is-boss.upcoming{border-color:var(--red);background:color-mix(in srgb, var(--red) 10%, var(--bg))}
+.node-name{position:absolute;top:50%;transform:translateY(-50%);width:max-content;max-width:min(150px, 34vw);font-size:12.5px;font-weight:700;line-height:1.2;color:var(--muted);pointer-events:none}
+.node-name.right{left:calc(100% + 14px)}
+.node-name.left{right:calc(100% + 14px);text-align:right}
+.node-wrap:has(.current) .node-name,.node-wrap:has(.sel) .node-name{color:var(--ink)}
+.node-me{position:absolute;bottom:2px;width:52px;aspect-ratio:1/2;pointer-events:none;filter:drop-shadow(0 4px 0 rgba(0,0,0,.18))}
+.node-me img{width:100%;height:100%;image-rendering:pixelated;display:block}
+.node-me.left{right:calc(100% + 4px)}
+.node-me.right{left:calc(100% + 4px)}
+.node-wrap:has(.node-me) .node-name{display:none}
+.node-me.mood-happy,.node-me.mood-proud,.node-me.mood-idle{animation:bob 1.4s steps(2,jump-none) infinite}
+.node-me.mood-fire{animation:bob .7s steps(2,jump-none) infinite}
+@keyframes nodepulse{50%{box-shadow:inset 0 -6px 0 rgba(0,0,0,.18), 0 0 0 3px var(--bg), 0 0 0 14px color-mix(in srgb, var(--node) 15%, transparent)}}
+.enter .node-wrap{animation:nodein .5s var(--spring) both}
+.enter .node-wrap:nth-child(3){animation-delay:.08s}.enter .node-wrap:nth-child(4){animation-delay:.16s}.enter .node-wrap:nth-child(5){animation-delay:.24s}.enter .node-wrap:nth-child(n+6){animation-delay:.32s}
+.enter .path-line .walked{stroke-dasharray:3000;animation:draw 1.2s .2s var(--ease) both}
+@keyframes nodein{from{opacity:0;transform:translate(-50%,-50%) scale(.4)}to{opacity:1;transform:translate(-50%,-50%)}}
+@keyframes draw{from{stroke-dashoffset:3000}to{stroke-dashoffset:0}}
+.lv-card.swap{animation:rise .35s var(--ease)}
