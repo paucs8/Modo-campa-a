@@ -721,7 +721,7 @@ function viewAxis(state, look = S.look) {
   return `<div class="char mood-${state}" aria-hidden="true"><img src="${src}" alt="">${state === 'tired' ? '<span class="zzz">z<b>z</b></span>' : ''}</div>`;
 }
 const heroStyle = () => { const bg = colorHex(S.color), ink = inkFor(bg); return `style="--hero-bg:${bg};--hero-ink:${ink}" data-ink="${ink === '#111111' ? 'dark' : 'light'}"`; };
-const coinBadge = n => `<span class="coins num"><img src="${IMG.coin}" alt="">${n}</span>`;
+const coinBadge = (n, count) => `<span class="coins num"><img src="${IMG.coin}" alt=""><span ${count ? `data-count="${count}"` : ''}>${n}</span></span>`;
 const PLAYER_COLORS = ['#C7B5FF', '#FFB547', '#8C9EFF', '#C5E86C', '#FF8AD0', '#E5483C', '#7FD8C9', '#1F1F24'];
 /** Muestras de color más un selector libre para cualquier color. */
 const viewColorPicker = (current, act, field = '') => {
@@ -950,7 +950,7 @@ function viewHero() {
       <div class="xpbar" role="progressbar" aria-valuenow="${pct(p)}" aria-valuemin="0" aria-valuemax="100" aria-label="Progreso al siguiente nivel"><i style="width:${p * 100}%"></i></div>
       <small class="num">${xp} XP · faltan ${to - xp} para el nivel ${L + 1}</small></div>
     <p class="say mood-${m.kind}">${esc(m.line)}</p>
-    <div class="hero-stats"><button class="coins-btn" data-act="open" data-id="shop" aria-label="Ir a la tienda">${coinBadge(coins())}</button></div></section>`;
+    <div class="hero-stats"><button class="coins-btn" data-act="open" data-id="shop" aria-label="Ir a la tienda">${coinBadge(coins(), 'coins')}</button></div></section>`;
 }
 function viewDaily() {
   const quests = dailyQuests(), done = quests.filter(q => questDone(q)).length, chest = (S.daily[today()] || {}).chest, ready = done === quests.length && !chest;
@@ -958,7 +958,7 @@ function viewDaily() {
     <ul class="quests">${quests.map(q => {
       const ok = questDone(q), t = questText(q);
       const act = q.kind === 'habit' ? `data-act="toggleHabit" data-k="${q.key}"` : q.kind === 'advance' ? `data-act="open" data-id="${q.cid}"` : 'data-act="open" data-id="fisico"';
-      return `<li><button class="quest ${ok ? 'done' : ''}" ${act}><span class="check">${GLYPH.check}</span><span class="txt"><b>${esc(t.title)}</b><small>${esc(t.sub)}</small></span>${q.kind === 'habit' ? '' : `<span class="go">${GLYPH.chev}</span>`}</button></li>`;
+      return `<li><button class="quest ${ok ? 'done' : ''}" data-pk="q-${esc(q.key || q.cid || q.kind)}" ${act}><span class="check">${GLYPH.check}</span><span class="txt"><b>${esc(t.title)}</b><small>${esc(t.sub)}</small></span>${q.kind === 'habit' ? '' : `<span class="go">${GLYPH.chev}</span>`}</button></li>`;
     })}</ul>
     <div class="chest ${ready ? 'ready' : chest ? 'opened' : ''}"><img src="${chest ? IMG.chestOpen : IMG.chest}" alt="">
       <div class="txt">${chest ? `<b>Cofre abierto</b><small class="num">+${chest.coins} monedas · +${chest.xp} XP${chest.gold ? ' · ¡dorado!' : ''}</small>`
@@ -1184,7 +1184,7 @@ function viewShop() {
   const have = coins(), recent = S.purchases.slice(-6).reverse();
   return html`<section class="c-hero shop-hero"><span class="pill">${GLYPH.bag}Tienda</span>
     <h2>Tus recompensas</h2><p>Canjea monedas por premios de verdad. Los pones tú.</p>
-    <div class="row"><span class="big num coins-big"><img src="${IMG.coin}" alt="">${have}</span>
+    <div class="row"><span class="big num coins-big"><img src="${IMG.coin}" alt=""><span data-count="shop">${have}</span></span>
       <button class="btn dark" data-act="toggleEditing">${ui.editing ? 'Listo' : 'Editar'}</button></div></section>
     <section class="panel"><h3>Premios</h3>
       <ul class="rewards">${S.rewards.map(r => {
@@ -1236,9 +1236,59 @@ function render() {
   document.getElementById('app').innerHTML = viewTop() + viewAccount() + main
     + `<datalist id="ex-list">${COMMON_EXERCISES.map(n => `<option value="${n}">`).join('')}</datalist>`;
   nav.innerHTML = viewNav();
+  enhance();
   window.scrollTo(0, y);
   const name = document.getElementById('nc-name');
   if (name && !name.value) name.focus();
+}
+
+// ---------- Detalles visuales tras pintar: paneles plegables, animaciones de entrada y de "hecho" ----------
+const FOLD_KEY = 'modo-campana-plegados';
+const FOLD_CLOSED = ['Cuenta', 'Tu cuenta', 'Sincronización', 'Canjeado', 'Armario especial'];   // empiezan cerrados
+const NO_FOLD = ['Nueva campaña', 'Mandar una idea', 'Para Claude'];
+let folds = {}; try { folds = JSON.parse(localStorage.getItem(FOLD_KEY) || '{}'); } catch { folds = {}; }
+const fx = { view: null, done: null, counts: {} };
+const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function enhance() {
+  const app = document.getElementById('app');
+  document.documentElement.style.setProperty('--accent', colorHex(S.color));
+  // Paneles plegables: el título abre y cierra, y se recuerda cómo lo dejaste
+  app.querySelectorAll('section.panel').forEach(p => {
+    const h = p.firstElementChild;
+    if (!h || h.tagName !== 'H3') return;
+    const title = (h.childNodes[0] && h.childNodes[0].textContent || '').trim();
+    if (!title || NO_FOLD.includes(title)) return;
+    const key = (S.campaigns.some(c => c.id === ui.view) ? 'c' : ui.view) + ':' + title;
+    const open = key in folds ? folds[key] : !FOLD_CLOSED.includes(title);
+    const body = document.createElement('div'); body.className = 'fold-body';
+    const inner = document.createElement('div'); inner.className = 'fold-in';
+    while (h.nextSibling) inner.appendChild(h.nextSibling);
+    body.appendChild(inner); p.appendChild(body);
+    p.classList.add('fold'); p.classList.toggle('open', open);
+    Object.assign(h.dataset, { act: 'fold', k: key });
+    h.setAttribute('role', 'button'); h.setAttribute('tabindex', '0'); h.setAttribute('aria-expanded', String(open));
+    h.insertAdjacentHTML('beforeend', `<span class="fold-chev" aria-hidden="true">${GLYPH.chev}</span>`);
+  });
+  // Al cambiar de pantalla, los bloques entran escalonados y las barras se llenan
+  const key = ui.view;
+  if (fx.view !== key && !reduceMotion()) {
+    app.classList.remove('enter'); void app.offsetWidth; app.classList.add('enter');
+    clearTimeout(fx.t); fx.t = setTimeout(() => app.classList.remove('enter'), 1100);
+  }
+  // Lo que acabas de completar hace "pop"
+  const doneNow = new Set([...app.querySelectorAll('.done[data-pk], .m.done[data-m]')].map(e => e.dataset.pk || 'm' + e.dataset.m));
+  if (fx.done && fx.view === key) app.querySelectorAll('.done[data-pk], .m.done[data-m]').forEach(e => { if (!fx.done.has(e.dataset.pk || 'm' + e.dataset.m)) e.classList.add('pop'); });
+  fx.done = doneNow;
+  // Los números que cambian (monedas) cuentan hasta su valor nuevo
+  app.querySelectorAll('[data-count]').forEach(e => {
+    const k = e.dataset.count, to = +e.textContent.replace(/\D/g, ''), from = fx.counts[k];
+    fx.counts[k] = to;
+    if (from == null || from === to || reduceMotion()) return;
+    const t0 = performance.now(), dur = 700;
+    const step = now => { const t = Math.min(1, (now - t0) / dur), v = Math.round(from + (to - from) * (1 - (1 - t) ** 3)); e.textContent = v; if (t < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step); e.classList.add('bump');
+  });
+  fx.view = key;
 }
 
 let toastTimer = null;
@@ -1347,6 +1397,11 @@ const actions = {
     update(s => { s.nudgesSent[to] = today(); }, { reward: false });
     const r = (ui.ranking || []).find(x => x.user_id === to);
     toast(`Le has dado caña a ${r ? r.name : 'tu amigo'}`);
+  },
+  fold: el => {
+    const p = el.closest('.panel'), open = !p.classList.contains('open');
+    p.classList.toggle('open', open); el.setAttribute('aria-expanded', String(open));
+    folds[el.dataset.k] = open; try { localStorage.setItem(FOLD_KEY, JSON.stringify(folds)); } catch {}
   },
   ideaKind: el => { ui.ideaKind = el.dataset.k; render(); },
   setIdea: async el => {
@@ -1646,6 +1701,9 @@ document.addEventListener('click', ev => {
   // Los botones de dos toques (borrar, comprar, canjear) guardan su confirmación
   if (!name.startsWith('delete') && !name.startsWith('buy') && name !== 'discardSession') ui.armed = null;
   if (actions[name]) actions[name](el, ev);
+});
+document.addEventListener('keydown', ev => {
+  if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.dataset && ev.target.dataset.act === 'fold') { ev.preventDefault(); actions.fold(ev.target); }
 });
 document.addEventListener('submit', ev => {
   const f = ev.target;
