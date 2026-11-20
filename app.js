@@ -1465,12 +1465,69 @@ function viewWeight() {
     ${when(w.goal == null || ui.editing, `<div class="inrow"><input id="goal" type="number" inputmode="decimal" step="0.5" min="30" max="250" placeholder="Peso objetivo (kg)" value="${w.goal ?? ''}"><button class="btn" data-act="setGoal">${w.goal == null ? 'Fijar objetivo' : 'Cambiar objetivo'}</button></div>`)}
     <p class="hint">${w.start == null ? 'El primer peso que apuntes queda como peso inicial.' : 'Pésate siempre en las mismas condiciones, por ejemplo al levantarte.'}</p></section>`;
 }
+// ---------- Entrenar: empezar ahora, apuntar uno ya hecho y lo último que has hecho ----------
+const ACTIVITIES = ['Baile', 'Correr', 'Fútbol', 'Pádel', 'Gimnasio', 'Yoga', 'Natación', 'Bici', 'Caminar', 'Boxeo', 'Escalada', 'Skate'];
+const sessionSets = se => Object.values(se.ex || {}).reduce((a, b) => a + b.length, 0);
+function sessionLine(se) {
+  const bits = [];
+  if (se.mins) bits.push(`${se.mins} min`);
+  const n = sessionSets(se); if (n) bits.push(`${n} ${n === 1 ? 'serie' : 'series'}`);
+  return bits.join(' · ');
+}
 function viewTraining() {
-  const trainedToday = S.train.includes(logDate()), week = new Set(weekDays().map(d => d.key)), dayName = LOG_DAYS[ui.logDay || 0].toLowerCase();
-  return html`<section class="panel"><h3>Entrenos <span class="label">+${XP.train} XP cada uno</span></h3>
+  const week = new Set(weekDays().map(d => d.key)), dayName = LOG_DAYS[ui.logDay || 0].toLowerCase(), trainedDay = S.train.includes(logDate());
+  const recent = S.sessions.slice(-6).reverse();
+  return html`<section class="panel nofold train-panel"><h3>Entrenar <span class="label">+${XP.train} XP cada día</span></h3>
     <div class="trio"><div><b>${S.train.length}</b><span>Total</span></div><div><b>${S.train.filter(k => week.has(k)).length}</b><span>Esta semana</span></div><div><b>${streak()}</b><span>Días seguidos</span></div></div>
-    ${viewDaySwitch()}<button class="btn ${trainedToday ? '' : 'primary'} wide" data-act="toggleTrainedToday">${trainedToday ? `${dayName[0].toUpperCase() + dayName.slice(1)} ya cuenta como entrenado · deshacer` : `He entrenado ${dayName}`}</button>
-    <p class="hint">Si guardas una sesión de rutina, el día cuenta solo.</p></section>`;
+    <div class="train-cta"><button class="btn primary" data-act="openStart">${GLYPH.play} Entrenar ahora</button><button class="btn dark" data-act="openLog">✏️ Apuntar uno hecho</button></div>
+    <p class="hint">«Entrenar ahora» te guía serie a serie con descansos. «Apuntar uno hecho» es para lo que ya hiciste: una rutina, 40 min de baile, un partido…</p>
+    ${when(recent.length, html`<div class="stack-s"><span class="label">Últimos entrenos</span><ul class="hist sess-hist">${recent.map(se => `<li><b>${esc(se.rname || 'Entreno')}</b><span>${shortDate(se.d)}${sessionLine(se) ? ' · ' + sessionLine(se) : ''}${se.note ? ' · ' + esc(se.note) : ''}</span>${confirmBtn('deleteSession', se.id, 'Borrar')}</li>`)}</ul></div>`)}
+    <button class="link-btn" data-act="toggleTrainedToday">${trainedDay ? `${dayName[0].toUpperCase() + dayName.slice(1)} ya cuenta como entrenado · quitar` : `Solo marcar ${dayName} como entrenado, sin detalles`}</button></section>`;
+}
+function viewStartPicker() {
+  return html`<div class="sheet-bg" data-act="closeSheet"></div><section class="sheet" role="dialog" aria-label="Entrenar ahora"><div class="sheet-grip"></div>
+    <div class="edit-row spread"><h3>¿Qué vas a entrenar?</h3><button class="btn ghost" data-act="closeSheet">Cerrar</button></div>
+    ${S.routines.length ? `<ul class="pick-list">${S.routines.map(r => `<li><button class="tpl" data-act="startSession" data-id="${r.id}"><span class="tpl-e">${GLYPH.play}</span><span class="txt"><b>${esc(r.name)}</b><small>${r.exercises.length} ejercicios</small></span></button></li>`).join('')}</ul>` : '<p class="hint">Aún no tienes rutinas. Crea una abajo, en Rutinas.</p>'}
+    <p class="hint">Para baile, partidos o cualquier actividad por tiempo, mejor «Apuntar uno hecho» cuando acabes.</p></section>`;
+}
+// Apuntar un entreno ya hecho
+const qKinds = { reps: 'Series y repes', peso: 'Con peso', min: 'Minutos', seg: 'Segundos', run: 'Distancia' };
+function qRows(x, rows, key) {
+  return rows.map((st, i) => {
+    const inp = (f, ph, w) => `<input class="qi ${w || ''}" inputmode="decimal" data-qk="${key}" data-i="${i}" data-f="${f}" value="${esc(st[f] ?? '')}" placeholder="${ph}" aria-label="${ph} serie ${i + 1}">`;
+    const k = x.kind;
+    const f = k === 'peso' ? inp('kg', 'kg') + '<span>×</span>' + inp('r', 'repes') : k === 'reps' ? inp('r', 'repes') + inp('kg', '+kg', 'sm') : k === 'run' ? inp('km', 'km') + inp('t', 'min') : inp('t', k === 'seg' ? 'seg' : 'min');
+    return `<div class="qrow"><span class="qn">${i + 1}</span>${f}</div>`;
+  }).join('');
+}
+function viewQuickLog() {
+  const q = ui.qlog, r = S.routines.find(x => x.id === q.routine), isAct = q.mode === 'activity';
+  const exBlock = (x, key, removable) => {
+    const rows = q.ex[key] || [], off = q.skip[key];
+    return html`<div class="qex ${off ? 'off' : ''}"><div class="qex-h"><b>${esc(x.name)}</b><small>${qKinds[x.kind] || ''}</small>
+      ${removable ? `<button class="btn ghost sm" data-act="qRemove" data-k="${key}">Quitar</button>` : `<button class="btn ghost sm" data-act="qSkip" data-k="${key}">${off ? 'Lo hice' : 'No lo hice'}</button>`}</div>
+      ${off ? '' : `<div class="qrows">${qRows(x, rows, key)}</div><div class="edit-row"><button class="btn ghost sm" data-act="qSet" data-k="${key}" data-d="1">+ Serie</button>${rows.length > 1 ? `<button class="btn ghost sm" data-act="qSet" data-k="${key}" data-d="-1">− Serie</button>` : ''}</div>`}</div>`;
+  };
+  const extras = q.extra.map((e, i) => exBlock(e, 'n' + i, true)).join('');
+  const add = q.adding ? html`<div class="qadd"><input id="qa-name" list="qa-list" placeholder="Ejercicio (ej: Giros, Flexiones…)" maxlength="40"><datalist id="qa-list">${COMMON_EXERCISES.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+      <div class="chips">${Object.entries(qKinds).map(([k, t]) => `<button class="chip-btn" data-act="qKind" data-k="${k}" aria-pressed="${q.addKind === k}">${t}</button>`).join('')}</div>
+      <label class="fld inline"><span>Series</span><input id="qa-sets" type="number" inputmode="numeric" min="1" max="20" value="3"></label>
+      <div class="edit-row"><button class="btn primary" data-act="qAddEx">Añadir</button><button class="btn ghost" data-act="qAdding">Cancelar</button></div></div>`
+    : `<button class="btn wide" data-act="qAdding">+ Añadir ejercicio${isAct ? ' (opcional)' : ''}</button>`;
+  return html`<div class="sheet-bg" data-act="closeSheet"></div><section class="sheet qlog" role="dialog" aria-label="Apuntar entreno"><div class="sheet-grip"></div>
+    <div class="edit-row spread"><h3>Apuntar entreno</h3><button class="btn ghost" data-act="closeSheet">Cerrar</button></div>
+    <div class="qsec"><span class="label">¿Cuándo?</span><div class="day-switch">${LOG_DAYS.map((t, i) => `<button data-act="qDay" data-k="${i}" aria-selected="${q.day === i}">${t}</button>`).join('')}</div></div>
+    <div class="qsec"><span class="label">¿Qué has hecho?</span><div class="chips">
+      <button class="chip-btn" data-act="qMode" data-k="activity" aria-pressed="${isAct}">🏃 Una actividad (baile, correr, partido…)</button>
+      ${S.routines.map(x => `<button class="chip-btn" data-act="qRoutine" data-id="${x.id}" aria-pressed="${!isAct && q.routine === x.id}">${esc(x.name)}</button>`).join('')}</div></div>
+    ${isAct ? html`<div class="qsec"><label class="fld"><span>Actividad</span><input data-q="activity" list="act-list" value="${esc(q.activity)}" placeholder="Ej: Baile" maxlength="30"></label><datalist id="act-list">${ACTIVITIES.map(a => `<option value="${a}">`).join('')}</datalist>
+        <div class="chips">${ACTIVITIES.slice(0, 6).map(a => `<button class="chip-btn" data-act="qAct" data-k="${a}" aria-pressed="${q.activity === a}">${a}</button>`).join('')}</div></div>` : ''}
+    <div class="qsec two"><label class="fld"><span>Duración (min)</span><div class="stp"><button class="stp-b" data-act="qMins" data-d="-5" aria-label="Menos minutos">−</button><input data-q="mins" inputmode="numeric" value="${esc(q.mins)}" placeholder="0" aria-label="Minutos"><span class="stp-u">min</span><button class="stp-b" data-act="qMins" data-d="5" aria-label="Más minutos">+</button></div></label>
+      <label class="fld"><span>${isAct && /baile/i.test(q.activity) ? 'Coreografía' : 'Nota (opcional)'}</span><input data-q="note" value="${esc(q.note)}" maxlength="60" placeholder="${isAct && /baile/i.test(q.activity) ? 'Ej: coreo de Rosalía' : 'Ej: me he notado fuerte'}"></label></div>
+    <div class="qsec"><span class="label">${isAct ? 'Ejercicios y series' : 'Ejercicios de ' + esc(r ? r.name : '')}</span>
+      ${!isAct && r ? r.exercises.map(x => exBlock(x, x.id, false)).join('') : ''}${extras}${add}</div>
+    <button class="btn primary wide" data-act="qSave">Guardar entreno</button>
+    <p class="hint">Lo que dejes vacío no se guarda. Los ejercicios nuevos se quedan en «Otros ejercicios» para que veas cómo mejoras.</p></section>`;
 }
 // Formulario de ejercicio: crear o editar, con campos según el tipo
 const KIND_FIELDS = { peso: ['sets', 'reps', 'step'], reps: ['sets', 'reps'], seg: ['sets'], min: ['sets'], run: [] };
@@ -1482,7 +1539,7 @@ const KIND_HELP = {
   min: 'Para rondas largas, como la comba. Te pondrá un objetivo un poco por encima de tu mejor marca.',
   run: 'Distancia y tiempo. Para ir a más kilómetros o a mejor ritmo.',
 };
-const COMMON_EXERCISES = ['Flexiones', 'Flexiones diamante', 'Flexiones inclinadas', 'Dominadas', 'Dominadas australianas', 'Fondos en paralelas', 'Fondos en silla', 'Sentadillas sin peso', 'Sentadilla búlgara', 'Zancadas', 'Puente de glúteo', 'Elevación de gemelos', 'Plancha', 'Plancha lateral', 'Abdominales', 'Elevación de piernas', 'Mountain climbers', 'Burpees', 'Jumping jacks', 'Saltar a la comba', 'Correr', 'Bici', 'Sentadilla', 'Peso muerto', 'Peso muerto rumano', 'Press banca', 'Press inclinado', 'Press militar', 'Remo con barra', 'Remo con mancuerna', 'Jalón al pecho', 'Curl de bíceps', 'Curl martillo', 'Extensión de tríceps', 'Elevaciones laterales', 'Prensa de piernas', 'Hip thrust', 'Baile', 'Yoga', 'Pilates', 'Estiramientos', 'Natación', 'Caminar', 'Pádel', 'Fútbol', 'Baloncesto', 'Escalada', 'Patinar', 'Boxeo'];
+const COMMON_EXERCISES = ['Flexiones', 'Flexiones diamante', 'Flexiones inclinadas', 'Dominadas', 'Dominadas australianas', 'Fondos en paralelas', 'Fondos en silla', 'Sentadillas sin peso', 'Sentadilla búlgara', 'Zancadas', 'Puente de glúteo', 'Elevación de gemelos', 'Plancha', 'Plancha lateral', 'Abdominales', 'Elevación de piernas', 'Mountain climbers', 'Burpees', 'Jumping jacks', 'Saltar a la comba', 'Correr', 'Bici', 'Sentadilla', 'Peso muerto', 'Peso muerto rumano', 'Press banca', 'Press inclinado', 'Press militar', 'Remo con barra', 'Remo con mancuerna', 'Jalón al pecho', 'Curl de bíceps', 'Curl martillo', 'Extensión de tríceps', 'Elevaciones laterales', 'Prensa de piernas', 'Hip thrust', 'Baile', 'Yoga', 'Pilates', 'Estiramientos', 'Natación', 'Caminar', 'Pádel', 'Fútbol', 'Baloncesto', 'Escalada', 'Patinar', 'Boxeo', 'Giros', 'Saltos', 'Footwork', 'Aislamientos', 'Ondas', 'Freezes', 'Pasadas de coreografía', 'Cardio de baile', 'Estiramientos de baile'];
 
 function viewExerciseForm(r, x, inSession) {
   const kind = x ? x.kind : 'reps';
@@ -1519,15 +1576,11 @@ function viewRoutine(r) {
     ${formOpenFor(r.id) && !ui.exForm.inSession ? viewExerciseForm(r, null, false) : `<button class="btn add-ex" data-act="newExercise" data-r="${r.id}">+ Ejercicio</button>`}</div>`;
 }
 function viewRoutines() {
-  const recent = S.sessions.slice(-5).reverse();
   return html`<section class="panel"><h3>Rutinas <span class="label">+${XP.record} XP por récord</span></h3>
     ${S.routines.map(viewRoutine)}
     <form class="adde" data-form="addRoutine"><input name="n" placeholder="Nueva rutina (ej: Día de piernas)" required maxlength="30" aria-label="Nombre de la nueva rutina"><button class="btn">Crear rutina</button></form>
     <p class="hint">Toca un ejercicio para cambiarlo o borrarlo.</p>
-    ${when(recent.length, html`<div class="stack-s"><span class="label">Últimas sesiones</span><ul class="hist">${recent.map(s => {
-      const r = S.routines.find(x => x.id === s.routine), sets = Object.values(s.ex).reduce((a, b) => a + b.length, 0);
-      return `<li><b>${esc(r ? r.name : s.rname || 'Rutina')}</b><span>${shortDate(s.d)} · ${sets} series</span>${when(ui.editing, confirmBtn('deleteSession', s.id, 'Borrar'))}</li>`;
-    })}</ul></div>`)}</section>`;
+</section>`;
 }
 function setInput(x, i, field, value, placeholder, label, mode = 'decimal') {
   return `<input inputmode="${mode}" data-x="${x}" data-i="${i}" data-f="${field}" value="${esc(value ?? '')}" placeholder="${placeholder}" aria-label="${label}">`;
@@ -1796,7 +1849,7 @@ function render() {
   }
   nav.hidden = false;
   const main = campaign ? viewCampaign(campaign) : ui.view === 'shop' ? viewShop() : ui.view === 'ranking' ? viewRanking() : ui.view === 'profile' ? viewProfile() : ui.view === 'player' ? viewPlayer() : ui.view === 'ideas' ? viewIdeas() : viewHome();
-  document.getElementById('app').innerHTML = viewTop() + viewLogBanner() + viewAccount() + main + (ui.exStats ? viewExerciseStats() : '')
+  document.getElementById('app').innerHTML = viewTop() + viewLogBanner() + viewAccount() + main + (ui.exStats ? viewExerciseStats() : '') + (ui.qlog ? viewQuickLog() : '') + (ui.startPick ? viewStartPicker() : '')
     + `<datalist id="ex-list">${COMMON_EXERCISES.map(n => `<option value="${n}">`).join('')}</datalist>`;
   nav.innerHTML = viewNav();
   enhance();
@@ -2087,6 +2140,7 @@ const actions = {
   // Rutinas y sesiones
   startSession: el => {
     const r = S.routines.find(x => x.id === el.dataset.id);
+    ui.startPick = false;
     ui.draft = { routine: r.id, started: Date.now(), cur: 0, restSec: 90, ex: Object.fromEntries(r.exercises.map(x => [x.id, nextSession(x).rows])) };
     saveDraft(); render(); window.scrollTo(0, 0);
   },
@@ -2192,6 +2246,80 @@ const actions = {
     if (error) { toast('No se pudo reaccionar'); loadFeed(); }
     else if (!mine) notify(f.user_id, 'react', `${e} A ${S.name} le mola tu logro`, `${f.text.charAt(0).toUpperCase() + f.text.slice(1)}`.replace(/^Ha /, 'Has '));
   },
+  openStart: () => { ui.startPick = true; render(); },
+  openLog: () => {
+    const r = S.routines[0];
+    ui.qlog = { day: ui.logDay || 0, mode: r ? 'routine' : 'activity', routine: r ? r.id : null, activity: '', mins: '', note: '', ex: {}, skip: {}, extra: [], adding: false, addKind: 'reps' };
+    if (r) r.exercises.forEach(x => { ui.qlog.ex[x.id] = nextSession(x).rows; });
+    render();
+  },
+  closeSheet: () => {
+    const sh = document.querySelector('.sheet');
+    const done = () => { ui.qlog = null; ui.startPick = false; ui.exStats = null; render(); };
+    if (sh) { sh.classList.add('out'); const bg = document.querySelector('.sheet-bg'); if (bg) bg.classList.add('out'); setTimeout(done, 220); } else done();
+  },
+  qDay: el => { ui.qlog.day = +el.dataset.k; render(); },
+  qMode: () => { Object.assign(ui.qlog, { mode: 'activity', routine: null, ex: Object.fromEntries(Object.entries(ui.qlog.ex).filter(([k]) => k[0] === 'n')), skip: {} }); render(); },
+  qRoutine: el => {
+    const r = S.routines.find(x => x.id === el.dataset.id), q = ui.qlog, keep = Object.fromEntries(Object.entries(q.ex).filter(([k]) => k[0] === 'n'));
+    Object.assign(q, { mode: 'routine', routine: r.id, skip: {}, ex: keep });
+    r.exercises.forEach(x => { q.ex[x.id] = nextSession(x).rows; });
+    render();
+  },
+  qAct: el => { ui.qlog.activity = el.dataset.k; render(); },
+  qMins: el => { const q = ui.qlog; q.mins = String(Math.max(0, (parseInt(q.mins, 10) || 0) + (+el.dataset.d))); const i = document.querySelector('[data-q=mins]'); if (i) i.value = q.mins; },
+  qSkip: el => { const q = ui.qlog; q.skip[el.dataset.k] = !q.skip[el.dataset.k]; render(); },
+  qSet: el => {
+    const q = ui.qlog, k = el.dataset.k, rows = q.ex[k] || (q.ex[k] = []);
+    const x = k[0] === 'n' ? q.extra[+k.slice(1)] : findExercise(k);
+    if (+el.dataset.d > 0) rows.push(rows.length ? Object.assign({}, rows[rows.length - 1]) : blankSet(x)); else if (rows.length > 1) rows.pop();
+    render();
+  },
+  qAdding: () => { ui.qlog.adding = !ui.qlog.adding; render(); const i = document.getElementById('qa-name'); if (i) i.focus(); },
+  qKind: el => { const name = document.getElementById('qa-name'), sets = document.getElementById('qa-sets'); ui.qlog.addKind = el.dataset.k; ui.qlog.addName = name ? name.value : ''; ui.qlog.addSets = sets ? sets.value : 3; render(); const n2 = document.getElementById('qa-name'); if (n2) n2.value = ui.qlog.addName || ''; const s2 = document.getElementById('qa-sets'); if (s2) s2.value = ui.qlog.addSets || 3; },
+  qAddEx: () => {
+    const q = ui.qlog, name = (document.getElementById('qa-name').value || '').trim(), n = Math.max(1, Math.min(20, parseInt(document.getElementById('qa-sets').value, 10) || 3));
+    if (!name) { toast('Pon el nombre del ejercicio'); return; }
+    const known = S.routines.flatMap(r => r.exercises).find(x => x.name.toLowerCase() === name.toLowerCase());
+    const x = { name: known ? known.name : name, kind: known ? known.kind : q.addKind };
+    q.extra.push(x); q.ex['n' + (q.extra.length - 1)] = Array.from({ length: n }, () => blankSet(x));
+    q.adding = false; render();
+  },
+  qRemove: el => { const q = ui.qlog, i = +el.dataset.k.slice(1); q.extra.splice(i, 1); const ex = {}; Object.entries(q.ex).forEach(([k, v]) => { if (k[0] !== 'n') ex[k] = v; else { const j = +k.slice(1); if (j < i) ex[k] = v; else if (j > i) ex['n' + (j - 1)] = v; } }); q.ex = ex; render(); },
+  qSave: () => {
+    const q = ui.qlog, r = q.mode === 'routine' ? S.routines.find(x => x.id === q.routine) : null;
+    const mins = parseInt(q.mins, 10) || 0, activity = (q.activity || '').trim();
+    if (q.mode === 'activity' && !activity) { toast('Escribe qué actividad has hecho'); return; }
+    const d = new Date(); d.setDate(d.getDate() - q.day); const day = dateKey(d);
+    let sum = null;
+    update(s => {
+      const ex = {};
+      if (r) r.exercises.forEach(x => { if (q.skip[x.id]) return; const sets = (q.ex[x.id] || []).map(st => parseSet(x.kind, st)).filter(Boolean); if (sets.length) ex[x.id] = sets; });
+      q.extra.forEach((e, i) => {
+        const sets = (q.ex['n' + i] || []).map(st => parseSet(e.kind, st)).filter(Boolean); if (!sets.length) return;
+        let x = s.routines.flatMap(rr => rr.exercises).find(y => y.name.toLowerCase() === e.name.toLowerCase());
+        if (!x) {
+          let other = s.routines.find(rr => rr.other);
+          if (!other) { other = { id: uid(), name: 'Otros ejercicios', other: true, exercises: [] }; s.routines.push(other); }
+          x = { id: uid(), name: e.name, kind: e.kind, sets: sets.length, reps: e.kind === 'peso' ? [8, 12] : e.kind === 'reps' ? [8, 15] : undefined, step: e.kind === 'peso' ? 2.5 : undefined };
+          other.exercises.push(x);
+        }
+        ex[x.id] = (ex[x.id] || []).concat(sets);
+      });
+      if (!Object.keys(ex).length && !mins) { sum = false; return; }
+      const name = r ? r.name : activity;
+      s.sessions.push({ id: uid(), d: day, routine: r ? r.id : null, rname: name, ex, mins, note: (q.note || '').trim(), activity: r ? null : activity });
+      s.sessions.sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
+      if (!s.train.includes(day)) { s.train.push(day); s.train.sort(); }
+      sum = { name, secs: mins * 60, sets: Object.values(ex).reduce((a, l) => a + l.length, 0), volume: Object.values(ex).flat().reduce((a, st) => a + (st.kg || 0) * (st.r || 0), 0) };
+    });
+    if (sum === false) { toast('Pon al menos los minutos o alguna serie'); return; }
+    ui.qlog = null; render();
+    sum.records = 0; sum.xp = XP.train;
+    showWorkoutSummary(sum);
+    const note = (q.note || '').trim();
+    postFeed('workout', r ? `ha entrenado ${r.name}${mins ? ` · ${mins} min` : ''} · ${sum.sets} ${sum.sets === 1 ? 'serie' : 'series'}` : `ha hecho ${mins ? mins + ' min de ' : ''}${activity.toLowerCase()}${note ? ` · ${note}` : ''}`);
+  },
   openStats: el => { ui.exStats = el.dataset.id; render(); },
   closeStats: () => { const sh = document.querySelector('.sheet'); if (sh) { sh.classList.add('out'); document.querySelector('.sheet-bg').classList.add('out'); setTimeout(() => { ui.exStats = null; render(); }, 220); } else { ui.exStats = null; render(); } },
   wsGo: el => { const k = +el.dataset.k, n = sessionRoutine().exercises.length; if (k < 0 || k >= n) return; ui.draft.cur = k; saveDraft(); render(); const t = document.querySelector('.ws-tabs .on'); if (t) t.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); const c = document.querySelector('.ws-card'); if (c) { c.classList.add('swap'); c.scrollIntoView({ block: 'start', behavior: 'smooth' }); } },
@@ -2238,7 +2366,7 @@ const actions = {
     ui.draft = null; saveDraft();
     update(s => {
       const day = logDate();
-      s.sessions.push({ id: uid(), d: day, routine: r.id, rname: r.name, ex }); s.sessions.sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
+      s.sessions.push({ id: uid(), d: day, routine: r.id, rname: r.name, ex, mins: sum.secs ? Math.round(sum.secs / 60) : 0 }); s.sessions.sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
       if (s.sessions.length > 600) s.sessions.shift();
       if (!s.train.includes(day)) { s.train.push(day); s.train.sort(); }
     });
@@ -2420,6 +2548,11 @@ document.addEventListener('submit', ev => {
   const f = ev.target;
   ev.preventDefault();
   if (forms[f.dataset.form]) forms[f.dataset.form](f, f.elements);
+});
+document.addEventListener('input', ev => {
+  const q = ui.qlog, t0 = ev.target;
+  if (q && t0.dataset.q) { q[t0.dataset.q] = t0.value; return; }
+  if (q && t0.dataset.qk) { const row = (q.ex[t0.dataset.qk] || [])[+t0.dataset.i]; if (row) row[t0.dataset.f] = t0.value; return; }
 });
 document.addEventListener('input', ev => {
   const t = ev.target, d = ui.draft;
