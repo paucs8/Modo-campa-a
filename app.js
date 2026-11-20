@@ -185,7 +185,7 @@ function migrate(s) {
   delete s.look.preset; delete s.look.star;
   s.look = Character.upgrade(s.look); // personaje por capas (v2)
   // Armario especial, semanas ganadas, cierre del lunes visto y cañas enviadas
-  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {}; s.feedSent = s.feedSent || {};
+  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {}; s.feedSent = s.feedSent || {}; s.shields = s.shields || 0; s.shielded = s.shielded || []; s.coinLog = s.coinLog || []; s.duelsSettled = s.duelsSettled || {}; s.duelBase = s.duelBase || {};
   if (s.photo === undefined) s.photo = null;
   s.v = 5;
   return s;
@@ -200,7 +200,7 @@ const ui = {
   addingCampaign: false, newIcon: 'star', newColor: 'pink',
   draft: storage.get(STORAGE.draft), sync: 'local', exForm: null, account: false,
   addingReward: false, bossHit: null,
-  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false }, profileExtras: true, prevCols: true, lookTab: 'cara', playerId: null, nudgeQueue: [], ideas: null, ideasState: 'idle', feed: null, feedState: 'idle', isAdmin: false, ideaKind: 'campana',
+  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false }, profileExtras: true, prevCols: true, lookTab: 'cara', playerId: null, nudgeQueue: [], ideas: null, ideasState: 'idle', feed: null, feedState: 'idle', duels: null, duelsState: 'idle', duelForm: { metric: 'xp', stake: 50 }, isAdmin: false, ideaKind: 'campana',
 };
 
 /* =========================================================
@@ -313,7 +313,7 @@ function questText(q) {
 // Monedas: se ganan jugando y se gastan en la tienda
 function coinsEarned() {
   const fromMissions = allMissions().filter(isDone).reduce((a, m) => a + Math.round(m.xp * COINS.missionShare), 0);
-  return fromMissions + S.train.length * COINS.train + totalRecords() * COINS.record + chestTotals().coins;
+  return fromMissions + S.train.length * COINS.train + totalRecords() * COINS.record + chestTotals().coins + S.coinLog.reduce((a, c) => a + c.amount, 0);
 }
 const chestReady = () => !(S.daily[today()] || {}).chest && dailyQuests().every(q => questDone(q));
 const coinsSpent = () => S.purchases.reduce((a, p) => a + p.cost, 0);
@@ -321,7 +321,7 @@ const coins = () => Math.max(0, coinsEarned() - coinsSpent());
 
 // Ánimo del personaje según lo que has hecho estos días
 function activeDays() {
-  const days = new Set([...S.train, ...S.weight.log.map(p => p.d), ...S.sessions.map(x => x.d)]);
+  const days = new Set([...S.train, ...S.weight.log.map(p => p.d), ...S.sessions.map(x => x.d), ...S.shielded]);
   Object.entries(S.activity).forEach(([d, v]) => { if (Object.values(v).some(n => n > 0)) days.add(d); });
   Object.entries(S.daily).forEach(([d, v]) => { if (v.chest || Object.values(v.habits || {}).some(Boolean)) days.add(d); });
   return days;
@@ -454,7 +454,9 @@ const isTyping = () => { const a = document.activeElement; return !!a && (a.tagN
 const stamp = s => s.updatedAt || 0;
 
 /** Guarda en el dispositivo y, si hay sesión, sube a Supabase poco después. */
+let duelSyncTimer = null;
 function persist() {
+  if (ui.duels) { clearTimeout(duelSyncTimer); duelSyncTimer = setTimeout(syncDuels, 1500); }
   S.updatedAt = Date.now();
   S.xpDays[today()] = totalXP();
   storage.set(STORAGE.state, S);
@@ -510,9 +512,74 @@ function listenRanking() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => { clearTimeout(rankingTimer); rankingTimer = setTimeout(loadRanking, 400); })
     .subscribe();
 }
+/* ---------- Escudo de racha: si un día fallas, se gasta solo y tu racha sigue ---------- */
+const SHIELD_COST = 150, SHIELD_MAX = 3;
+function useShields() {
+  if (!S.onboarded || !S.shields) return;
+  const days = activeDays(), d = new Date(), gap = [];
+  d.setDate(d.getDate() - 1);
+  while (!days.has(dateKey(d)) && gap.length < 7) { gap.push(dateKey(d)); d.setDate(d.getDate() - 1); }
+  if (!gap.length || gap.length > S.shields || !days.has(dateKey(d))) return;
+  const kept = (() => { let n = 0; const k = new Date(d); while (days.has(dateKey(k))) { n++; k.setDate(k.getDate() - 1); } return n; })();
+  update(s => { s.shielded.push(...gap); s.shields -= gap.length; }, { reward: false });
+  setTimeout(() => toast(`🛡️ ${gap.length === 1 ? 'Un escudo ha salvado' : gap.length + ' escudos han salvado'} tu racha de ${kept} ${kept === 1 ? 'día' : 'días'}`), 900);
+}
+
+/* ---------- Duelos 1 contra 1: una semana, quien más XP o más entrenos, con monedas en juego ---------- */
+const DUEL_METRIC = { xp: { name: 'Más XP', desc: 'más XP', unit: 'XP' }, entrenos: { name: 'Más días entrenados', desc: 'más días entrenados', unit: 'entrenos' } };
+const DUEL_STAKES = [0, 50, 100, 200];
+const addDays = (key, n) => { const d = new Date(key + 'T12:00'); d.setDate(d.getDate() + n); return dateKey(d); };
+const iAmChallenger = d => cloud.user && d.challenger === cloud.user.id;
+const duelRival = d => (iAmChallenger(d) ? { id: d.opponent, name: d.opponent_name } : { id: d.challenger, name: d.challenger_name });
+/** Mi marcador en un duelo: lo que he sumado entre el día de inicio y el de fin. */
+function myDuelScore(d) {
+  if (!d.start_day) return 0;
+  const end = d.end_day, now = today(), until = now < end ? null : end;
+  if (d.metric === 'entrenos') return S.train.filter(k => k >= d.start_day && k < end).length;
+  const base = S.duelBase[d.id] != null ? S.duelBase[d.id] : xpBefore(d.start_day);
+  return Math.max(0, (until ? xpBefore(until) : totalXP()) - base);
+}
+const duelScores = d => { const mine = myDuelScore(d), theirs = iAmChallenger(d) ? d.opponent_score : d.challenger_score; return { mine, theirs: theirs || 0 }; };
+async function loadDuels() {
+  if (!cloud.user) return;
+  const { data, error } = await cloud.client.from('duels').select('*').order('created_at', { ascending: false }).limit(30);
+  if (error) { ui.duelsState = missingTable(error) ? 'missing' : 'error'; return; }
+  ui.duels = (data || []).filter(d => d.challenger === cloud.user.id || d.opponent === cloud.user.id); ui.duelsState = 'ok';
+  syncDuels();
+  if (!isTyping()) render();
+}
+let duelsTimer = null;
+function listenDuels() {
+  if (cloud.duelChannel) cloud.client.removeChannel(cloud.duelChannel);
+  cloud.duelChannel = cloud.client.channel('duels')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'duels' }, () => { clearTimeout(duelsTimer); duelsTimer = setTimeout(loadDuels, 400); })
+    .subscribe();
+}
+/** Sube mi marcador a los duelos activos y reparte las monedas de los que han terminado. */
+function syncDuels() {
+  if (!cloud.user || !ui.duels) return;
+  ui.duels.forEach(d => {
+    if (d.status !== 'active' && d.status !== 'finished') return;
+    // Punto de partida de mi XP: lo que tenía al empezar el duelo (si lo veo el mismo día, lo que tengo ahora)
+    if (d.metric === 'xp' && d.start_day && S.duelBase[d.id] == null) { S.duelBase[d.id] = today() === d.start_day ? totalXP() : xpBefore(d.start_day); persist(); }
+    const field = iAmChallenger(d) ? 'challenger_score' : 'opponent_score', mine = myDuelScore(d);
+    if (d.status === 'active' && d[field] !== mine) { d[field] = mine; cloud.client.from('duels').update({ [field]: mine }).eq('id', d.id).then(() => {}); }
+    if (today() >= d.end_day && !S.duelsSettled[d.id]) {
+      const { theirs } = duelScores(d), rival = duelRival(d);
+      const won = mine > theirs, lost = mine < theirs;
+      S.duelsSettled[d.id] = won ? 'win' : lost ? 'loss' : 'tie';
+      if (d.stake && (won || lost)) S.coinLog.push({ id: uid(), d: today(), amount: won ? d.stake : -d.stake, note: `Duelo ${won ? 'ganado a' : 'perdido contra'} ${rival.name}` });
+      persist();
+      if (d.status === 'active') cloud.client.from('duels').update({ status: 'finished' }).eq('id', d.id).then(() => {});
+      setTimeout(() => toast(won ? `¡Has ganado el duelo contra ${rival.name}!${d.stake ? ' +' + d.stake + ' monedas' : ''}` : lost ? `${rival.name} te ha ganado el duelo${d.stake ? ' (−' + d.stake + ' monedas)' : ''}` : `Empate en el duelo con ${rival.name}`), 1200);
+      if (won) postFeed('duel', `ha ganado el duelo contra ${rival.name} (${mine} a ${theirs} ${DUEL_METRIC[d.metric].unit})`, 'duel:' + d.id);
+    }
+  });
+}
+
 /* ---------- Muro de actividad: lo que va consiguiendo cada uno, con reacciones ---------- */
 const REACTIONS = ['🔥', '💪', '👏'];
-const FEED_ICON = { level: '⭐', campaign: '🏁', boss: '⚔️', workout: '🏋️', record: '🏆', chest: '💰', player: '🆙' };
+const FEED_ICON = { duel: '⚔️', level: '⭐', campaign: '🏁', boss: '⚔️', workout: '🏋️', record: '🏆', chest: '💰', player: '🆙' };
 /** Publica un logro en el muro (una sola vez por clave, para no repetir si desmarcas y vuelves a marcar). */
 function postFeed(kind, text, key) {
   if (!cloud.user || ui.feedState === 'missing') return;
@@ -688,6 +755,8 @@ async function startSync(user, { fresh = false } = {}) {
   listenRemote();
   listenRanking();
   listenFeed(); loadFeed();
+  listenDuels(); loadDuels();
+  useShields();
   listenNudges();
   publishProfile();
   loadRanking();
@@ -958,6 +1027,7 @@ function viewPlayer() {
       <p class="hint num">${r.xp} XP en total.</p></section>
     <section class="panel"><h3>Objetos <span class="label">${items.length}/${ITEMS.length}</span></h3>
       ${items.length ? `<div class="mini-items">${items.map(i => `<span title="${i.name}"><img src="${IMG[i.key]}" alt="${i.name}"></span>`).join('')}</div>` : '<p class="hint">Todavía no ha desbloqueado ninguno.</p>'}</section>
+    ${when(!r.me && cloud.user, viewDuelForm(r))}
     ${r.me ? '<button class="btn wide" data-act="open" data-id="profile">Editar mi perfil</button>'
       : S.nudgesSent[r.user_id] === today() ? '<button class="btn wide" disabled>Ya le has dado caña hoy</button>'
       : `<button class="btn primary wide" data-act="nudge" data-id="${esc(r.user_id)}">¡Vamos! Dale caña a ${esc(r.name)}</button><p class="hint center">Le saldrá un aviso al abrir la app. Una vez al día.</p>`}
@@ -968,6 +1038,41 @@ const ago = iso => {
   if (m < 1) return 'ahora'; if (m < 60) return `hace ${m} min`; const h = Math.round(m / 60); if (h < 24) return `hace ${h} h`;
   const d = Math.round(h / 24); return d === 1 ? 'ayer' : d < 7 ? `hace ${d} días` : new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
 };
+function viewDuelCard(d) {
+  const rival = duelRival(d), who = (ui.ranking || []).find(r => r.user_id === rival.id) || { name: rival.name, color: '#C7B5FF', user_id: rival.id };
+  const me = (ui.ranking || []).find(r => r.user_id === cloud.user.id) || { name: S.name, color: S.color, look: S.look, photo: S.photo };
+  const meta = DUEL_METRIC[d.metric] || DUEL_METRIC.xp, stake = d.stake ? `${coinBadge(d.stake)} en juego` : 'Sin apuesta, solo el orgullo';
+  if (d.status === 'pending') {
+    const incoming = !iAmChallenger(d);
+    return html`<li class="duel pending"><div class="duel-h"><span class="pill">⚔️ ${incoming ? 'Te han retado' : 'Reto enviado'}</span><small>${stake}</small></div>
+      <p><b>${esc(incoming ? rival.name : 'Tú')}</b> ${incoming ? 'te reta' : `has retado a <b>${esc(rival.name)}</b>`} a una semana de <b>${meta.desc}</b>.</p>
+      <div class="edit-row">${incoming ? `<button class="btn primary" data-act="acceptDuel" data-id="${d.id}">Aceptar</button><button class="btn ghost" data-act="declineDuel" data-id="${d.id}">Rechazar</button>`
+        : `<small class="hint">Esperando a que acepte…</small><button class="btn ghost" data-act="declineDuel" data-id="${d.id}">Cancelar</button>`}</div></li>`;
+  }
+  const { mine, theirs } = duelScores(d), max = Math.max(1, mine, theirs), over = today() >= d.end_day;
+  const left = Math.max(0, Math.round((new Date(d.end_day + 'T00:00') - Date.now()) / 86400000));
+  const res = S.duelsSettled[d.id];
+  const status = over ? (res === 'win' || mine > theirs ? '¡Has ganado!' : res === 'loss' || mine < theirs ? 'Has perdido' : 'Empate') : left <= 1 ? 'Último día' : `Quedan ${left} días`;
+  const side = (p, v, cls) => `<div class="duel-side ${cls}">${avatar(p)}<b class="num">${v}</b><small>${esc(p.name)}</small><div class="duel-bar"><i style="width:${v / max * 100}%"></i></div></div>`;
+  return html`<li class="duel ${over ? 'over' : ''} ${mine > theirs ? 'ahead' : mine < theirs ? 'behind' : ''}"><div class="duel-h"><span class="pill">⚔️ ${meta.name}</span><small>${status}</small></div>
+    <div class="duel-vs">${side(me, mine, 'me')}<span class="vs">VS</span>${side(who, theirs, 'them')}</div><small class="hint">${stake} · ${meta.unit === 'XP' ? 'XP sumada' : 'Días entrenados'} desde ${shortDate(d.start_day)}</small></li>`;
+}
+function viewDuels() {
+  if (!cloud.user || !ui.duels || ui.duelsState !== 'ok') return '';
+  const recent = ui.duels.filter(d => d.status === 'pending' || d.status === 'active' || (d.status === 'finished' && today() < addDays(d.end_day, 3)));
+  if (!recent.length) return '';
+  return html`<section class="duels"><div class="edit-row spread"><h2 class="sec-t">Duelos</h2></div><ul class="duel-list">${recent.map(viewDuelCard)}</ul></section>`;
+}
+function viewDuelForm(r) {
+  if (ui.duelsState === 'missing') return '<section class="panel"><h3>Duelo</h3><p class="hint">Los duelos aún no están activados en Supabase (falta supabase-duelos.sql).</p></section>';
+  const open = (ui.duels || []).find(d => (d.challenger === r.user_id || d.opponent === r.user_id) && (d.status === 'pending' || d.status === 'active'));
+  if (open) return `<ul class="duel-list">${viewDuelCard(open)}</ul>`;
+  const f = ui.duelForm, have = coins();
+  return html`<section class="panel duel-form"><h3>Retar a un duelo</h3><p class="hint">Una semana a ver quién gana. Empieza cuando acepte.</p>
+    <div class="chips">${Object.entries(DUEL_METRIC).map(([k, m]) => `<button class="chip-btn" data-act="duelMetric" data-k="${k}" aria-pressed="${f.metric === k}">${m.name}</button>`).join('')}</div>
+    <span class="label">Apuesta</span><div class="chips">${DUEL_STAKES.map(v => `<button class="chip-btn" data-act="duelStake" data-k="${v}" aria-pressed="${f.stake === v}" ${v > have ? 'disabled' : ''}>${v ? v + ' monedas' : 'Nada'}</button>`).join('')}</div>
+    <button class="btn primary wide" data-act="challenge" data-id="${esc(r.user_id)}">⚔️ Retar a ${esc(r.name)}</button></section>`;
+}
 function viewFeedItem(f) {
   const who = (ui.ranking || []).find(r => r.user_id === f.user_id) || { name: f.name, color: '#C7B5FF', user_id: f.user_id };
   const me = cloud.user && f.user_id === cloud.user.id, reacts = f.feed_reactions || [];
@@ -1068,7 +1173,7 @@ function viewNewCampaign() {
     <p class="hint">Se crea con un nivel vacío y la abres en modo edición para añadir misiones.</p></section>`;
 }
 function viewHome() {
-  return viewHero() + viewDaily() + viewRankTeaser() + viewFeed(3) + viewWeek() + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
+  return viewHero() + viewDaily() + viewDuels() + viewRankTeaser() + viewFeed(3) + viewWeek() + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
     <button class="cc add" data-act="toggleNewCampaign">${GLYPH.plus}Nueva campaña</button></div></section>`
     + when(ui.addingCampaign, viewNewCampaign()) + viewInventory();
 }
@@ -1211,7 +1316,7 @@ function viewExerciseStats() {
     <div class="trio"><div class="stat"><b class="num">${st.best ? esc(setText(st.best)) : '–'}</b><small>Récord</small></div>
       <div class="stat"><b class="num ${diff > 0 ? 'up' : ''}">${first ? (diff > 0 ? '+' : '') + fmt(diff) + ' ' + M.unit : '–'}</b><small>Desde el principio</small></div>
       <div class="stat"><b class="num">${x.kind === 'peso' && volume ? fmt(volume) + ' kg' : list.length}</b><small>${x.kind === 'peso' && volume ? 'Kilos movidos' : 'Sesiones'}</small></div></div>
-    ${list.length ? html`<h4>Últimas sesiones</h4><ul class="hist">${list.slice(-8).reverse().map(se => `<li><span>${day(se.d)}</span><b>${esc(se.ex[x.id].map(setText).join(' · '))}</b></li>`)}</ul>` : ''}</section>`;
+    ${list.length ? html`<h4>Últimas sesiones</h4><ul class="exhist">${list.slice(-8).reverse().map(se => `<li><span>${day(se.d)}</span><b>${esc(se.ex[x.id].map(setText).join(' · '))}</b></li>`)}</ul>` : ''}</section>`;
 }
 
 // ---------- Modo entrenamiento: un ejercicio cada vez, series con botones grandes, descanso y cronómetro ----------
@@ -1395,6 +1500,9 @@ function viewShop() {
     <h2>Tus recompensas</h2><p>Canjea monedas por premios de verdad. Los pones tú.</p>
     <div class="row"><span class="big num coins-big"><img src="${IMG.coin}" alt=""><span data-count="shop">${have}</span></span>
       <button class="btn dark" data-act="toggleEditing">${ui.editing ? 'Listo' : 'Editar'}</button></div></section>
+    <section class="shield-card ${S.shields ? 'has' : ''}"><div class="shield-ico">🛡️<b class="num">${S.shields}</b></div>
+      <div class="txt"><b>Escudo de racha</b><small>Si un día no haces nada, se gasta solo y tu racha sigue. Puedes tener ${SHIELD_MAX}.</small>${coinBadge(SHIELD_COST)}</div>
+      ${S.shields >= SHIELD_MAX ? '<span class="owned">Al máximo</span>' : have >= SHIELD_COST ? `<button class="btn ${ui.armed === 'buy:shield' ? 'primary' : 'dark'}" data-act="buyShield">${ui.armed === 'buy:shield' ? '¿Comprar?' : 'Comprar'}</button>` : `<span class="need num">Te faltan ${SHIELD_COST - have}</span>`}</section>
     <section class="panel"><h3>Premios</h3>
       <ul class="rewards">${S.rewards.map(r => {
         const can = have >= r.cost, armed = ui.armed === 'buy:' + r.id;
@@ -1734,6 +1842,36 @@ const actions = {
     rows.push(rows.length ? Object.assign({}, rows[rows.length - 1], { done: false }) : blankSet(x));
     saveDraft(); render();
   },
+  buyShield: () => {
+    if (S.shields >= SHIELD_MAX || coins() < SHIELD_COST) return;
+    if (ui.armed !== 'buy:shield') { ui.armed = 'buy:shield'; render(); return; }
+    ui.armed = null;
+    update(s => { s.shields++; s.purchases.push({ id: uid(), name: 'Escudo de racha', cost: SHIELD_COST, d: today() }); }, { reward: false });
+    toast('🛡️ Escudo listo. Tu racha está protegida');
+  },
+  duelMetric: el => { ui.duelForm.metric = el.dataset.k; render(); },
+  duelStake: el => { ui.duelForm.stake = +el.dataset.k; render(); },
+  challenge: async el => {
+    const r = (ui.ranking || []).find(x => x.user_id === el.dataset.id), f = ui.duelForm;
+    if (!r || !cloud.user || coins() < f.stake) return;
+    el.disabled = true;
+    const { error } = await cloud.client.from('duels').insert({ challenger: cloud.user.id, opponent: r.user_id, challenger_name: S.name, opponent_name: r.name, metric: f.metric, stake: f.stake });
+    if (error) { toast(missingTable(error) ? 'Falta activar los duelos en Supabase' : 'No se pudo enviar el reto'); el.disabled = false; return; }
+    toast(`⚔️ Reto enviado a ${r.name}`); loadDuels();
+  },
+  acceptDuel: async el => {
+    const d = (ui.duels || []).find(x => String(x.id) === el.dataset.id); if (!d) return;
+    if (coins() < d.stake) { toast(`Necesitas ${d.stake} monedas para aceptar`); return; }
+    const start = today(), patch = { status: 'active', start_day: start, end_day: addDays(start, 7), challenger_score: 0, opponent_score: 0 };
+    const { error } = await cloud.client.from('duels').update(patch).eq('id', d.id);
+    if (error) { toast('No se pudo aceptar'); return; }
+    Object.assign(d, patch); toast('⚔️ ¡Duelo aceptado! Tenéis 7 días'); syncDuels(); render();
+  },
+  declineDuel: async el => {
+    const d = (ui.duels || []).find(x => String(x.id) === el.dataset.id); if (!d) return;
+    const { error } = await cloud.client.from('duels').update({ status: iAmChallenger(d) ? 'cancelled' : 'declined' }).eq('id', d.id);
+    if (error) toast('No se pudo'); else loadDuels();
+  },
   react: async el => {
     if (!cloud.user || !ui.feed) return;
     const f = ui.feed.find(x => String(x.id) === el.dataset.id), e = el.dataset.k; if (!f) return;
@@ -2011,6 +2149,7 @@ document.addEventListener('keydown', ev => {
 });
 
 render();
+useShields();
 initCloud();
 })();
 
