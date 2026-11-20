@@ -1001,6 +1001,7 @@ function viewAccount() {
       <label class="fld"><span>Email</span><input name="email" type="email" autocomplete="email" required></label>
       <label class="fld"><span>Contraseña</span><input name="password" type="password" autocomplete="current-password" minlength="6" required></label>
       <div class="edit-row"><button class="btn primary">Entrar</button><button type="button" class="btn" data-act="signUp">Crear cuenta</button></div>
+      ${ui.authMsg ? `<p class="auth-msg ${ui.authMsg.ok ? 'ok' : ''}">${esc(ui.authMsg.text)}</p>` : ''}
     </form>
     <p class="hint">¿Primera vez? Pon tu email y una contraseña nueva y dale a Crear cuenta. Si ya tienes, dale a Entrar.</p></section>`;
 }
@@ -1920,8 +1921,9 @@ const actions = {
     const F = el.closest('form').elements;
     if (!F.email.checkValidity() || !F.password.checkValidity()) { toast('Pon un email y una contraseña de 6 caracteres o más'); return; }
     const { data, error } = await cloud.client.auth.signUp({ email: F.email.value.trim(), password: F.password.value, options: { emailRedirectTo: location.origin + location.pathname } });
-    if (error) { toast(authError(error)); return; }
-    if (!data.session) toast('Revisa tu correo para confirmar la cuenta y luego dale a Entrar');
+    if (error) { ui.authMsg = { text: authError(error) }; toast(authError(error)); render(); return; }
+    if (!data.session) { ui.authMsg = { ok: true, text: 'Cuenta creada, pero falta confirmarla: abre el correo que te ha llegado, toca el enlace y luego vuelve aquí y dale a Entrar. Si no llega en unos minutos, mira en spam o avisa a Pau.' }; render(); }
+    else ui.authMsg = null;
   },
   open: el => { if (el.dataset.id === 'ranking') loadRanking(); if (el.dataset.id === 'ideas') loadIdeas(); ui.view = el.dataset.id; ui.addingCampaign = false; ui.editing = false; ui.exForm = null; ui.addingReward = false; render(); window.scrollTo(0, 0); },
   toggleEditing: repaint(() => { ui.editing = !ui.editing; }),
@@ -2363,7 +2365,7 @@ const forms = {
   },
   signIn: async (f, F) => {
     const { error } = await cloud.client.auth.signInWithPassword({ email: F.email.value.trim(), password: F.password.value });
-    if (error) toast(authError(error)); else toast('Conectado. Sincronizando…');
+    if (error) { ui.authMsg = { text: authError(error) }; toast(authError(error)); render(); } else { ui.authMsg = null; toast('Conectado. Sincronizando…'); }
   },
   addMission: (f, F) => {
     const c = findCampaign(f.dataset.c), l = c.levels.find(x => x.id === f.dataset.l), name = F.n.value.trim();
