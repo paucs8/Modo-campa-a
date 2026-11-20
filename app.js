@@ -185,7 +185,7 @@ function migrate(s) {
   delete s.look.preset; delete s.look.star;
   s.look = Character.upgrade(s.look); // personaje por capas (v2)
   // Armario especial, semanas ganadas, cierre del lunes visto y cañas enviadas
-  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {};
+  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {}; s.feedSent = s.feedSent || {};
   if (s.photo === undefined) s.photo = null;
   s.v = 5;
   return s;
@@ -200,7 +200,7 @@ const ui = {
   addingCampaign: false, newIcon: 'star', newColor: 'pink',
   draft: storage.get(STORAGE.draft), sync: 'local', exForm: null, account: false,
   addingReward: false, bossHit: null,
-  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false }, profileExtras: true, prevCols: true, lookTab: 'cara', playerId: null, nudgeQueue: [], ideas: null, ideasState: 'idle', isAdmin: false, ideaKind: 'campana',
+  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false }, profileExtras: true, prevCols: true, lookTab: 'cara', playerId: null, nudgeQueue: [], ideas: null, ideasState: 'idle', feed: null, feedState: 'idle', isAdmin: false, ideaKind: 'campana',
 };
 
 /* =========================================================
@@ -510,6 +510,48 @@ function listenRanking() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => { clearTimeout(rankingTimer); rankingTimer = setTimeout(loadRanking, 400); })
     .subscribe();
 }
+/* ---------- Muro de actividad: lo que va consiguiendo cada uno, con reacciones ---------- */
+const REACTIONS = ['🔥', '💪', '👏'];
+const FEED_ICON = { level: '⭐', campaign: '🏁', boss: '⚔️', workout: '🏋️', record: '🏆', chest: '💰', player: '🆙' };
+/** Publica un logro en el muro (una sola vez por clave, para no repetir si desmarcas y vuelves a marcar). */
+function postFeed(kind, text, key) {
+  if (!cloud.user || ui.feedState === 'missing') return;
+  if (key) { if (S.feedSent[key]) return; S.feedSent[key] = Date.now(); persist(); }
+  cloud.client.from('feed').insert({ user_id: cloud.user.id, name: S.name || '', kind, text: text.slice(0, 200) })
+    .then(({ error }) => { if (error && missingTable(error)) ui.feedState = 'missing'; else if (!error) setTimeout(loadFeed, 300); });
+}
+let feedTimer = null;
+async function loadFeed() {
+  if (!cloud.user) return;
+  const { data, error } = await cloud.client.from('feed').select('id,user_id,name,kind,text,created_at,feed_reactions(user_id,emoji)').order('created_at', { ascending: false }).limit(40);
+  if (error) { ui.feedState = missingTable(error) ? 'missing' : 'error'; return; }
+  ui.feed = data || []; ui.feedState = 'ok';
+  if (!isTyping()) render();
+}
+function listenFeed() {
+  if (cloud.feedChannel) cloud.client.removeChannel(cloud.feedChannel);
+  cloud.feedChannel = cloud.client.channel('feed')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'feed' }, () => { clearTimeout(feedTimer); feedTimer = setTimeout(loadFeed, 400); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'feed_reactions' }, () => { clearTimeout(feedTimer); feedTimer = setTimeout(loadFeed, 400); })
+    .subscribe();
+}
+/** Niveles de campaña superados ahora mismo (para saber cuáles se acaban de superar). */
+const clearedLevels = () => new Set(S.campaigns.flatMap(c => c.levels.filter(l => l.missions.length && levelProgress(l) >= 1).map(l => c.id + ':' + l.id)));
+function announceProgress(levelsBefore, xpBefore) {
+  if (!cloud.user) return;
+  clearedLevels().forEach(k => {
+    if (levelsBefore.has(k)) return;
+    const [cid, lid] = k.split(':'), c = S.campaigns.find(x => x.id === cid), l = c && c.levels.find(x => x.id === lid);
+    if (!l) return;
+    const b = boss(c), last = c.levels[c.levels.length - 1] === l;
+    if (b && b.level === l) postFeed('boss', `ha derrotado al jefe de ${c.name}${b.target ? ': ' + b.target : ''}`, 'boss:' + k);
+    else if (last) postFeed('campaign', `ha completado la campaña ${c.name}`, 'camp:' + k);
+    else postFeed('level', `ha superado «${l.name}» en ${c.name}`, 'lvl:' + k);
+  });
+  const L0 = levelOf(xpBefore), L1 = levelOf(totalXP());
+  if (L1 > L0) postFeed('player', `ha subido al nivel ${L1}: ${rankFor(L1)}`, 'player:' + L1);
+}
+
 /* ---------- Darse caña: un aviso de ánimo entre amigos ---------- */
 // ---------- Buzón de ideas: los jugadores sugieren y quien lleva la app decide ----------
 const IDEA_KINDS = { campana: 'Campaña nueva', ejercicio: 'Ejercicio o deporte', funcion: 'Algo de la app', otro: 'Otra cosa' };
@@ -645,6 +687,7 @@ async function startSync(user, { fresh = false } = {}) {
   if (fresh) await mergeWithCloud(); else await pull();
   listenRemote();
   listenRanking();
+  listenFeed(); loadFeed();
   listenNudges();
   publishProfile();
   loadRanking();
@@ -678,8 +721,9 @@ document.addEventListener('focusout', () => setTimeout(() => {
 
 /** Única puerta para cambiar datos: aplica el cambio, guarda, repinta y premia. */
 function update(change, { reward = true } = {}) {
-  const before = totalXP(), readyBefore = chestReady();
+  const before = totalXP(), readyBefore = chestReady(), levelsBefore = clearedLevels();
   change(S);
+  announceProgress(levelsBefore, before);
   persist();
   render();
   if (!readyBefore && chestReady()) setTimeout(() => toast('¡Cofre del día listo! Ábrelo en Inicio'), reward ? 2000 : 0);
@@ -919,6 +963,28 @@ function viewPlayer() {
       : `<button class="btn primary wide" data-act="nudge" data-id="${esc(r.user_id)}">¡Vamos! Dale caña a ${esc(r.name)}</button><p class="hint center">Le saldrá un aviso al abrir la app. Una vez al día.</p>`}
     <button class="btn ghost wide" data-act="open" data-id="ranking">Volver al ranking</button>`;
 }
+const ago = iso => {
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (m < 1) return 'ahora'; if (m < 60) return `hace ${m} min`; const h = Math.round(m / 60); if (h < 24) return `hace ${h} h`;
+  const d = Math.round(h / 24); return d === 1 ? 'ayer' : d < 7 ? `hace ${d} días` : new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+};
+function viewFeedItem(f) {
+  const who = (ui.ranking || []).find(r => r.user_id === f.user_id) || { name: f.name, color: '#C7B5FF', user_id: f.user_id };
+  const me = cloud.user && f.user_id === cloud.user.id, reacts = f.feed_reactions || [];
+  const chips = REACTIONS.map(e => {
+    const n = reacts.filter(r => r.emoji === e).length, mine = reacts.some(r => r.emoji === e && cloud.user && r.user_id === cloud.user.id);
+    return `<button class="react ${mine ? 'on' : ''}" data-act="react" data-id="${f.id}" data-k="${e}" aria-pressed="${mine}" aria-label="Reaccionar ${e}">${e}${n ? `<span class="num">${n}</span>` : ''}</button>`;
+  }).join('');
+  return html`<li class="fi k-${esc(f.kind)}"><button class="fi-ava" data-act="openPlayer" data-id="${esc(f.user_id)}" aria-label="Perfil de ${esc(who.name)}">${avatar(who)}<span class="fi-ico" aria-hidden="true">${FEED_ICON[f.kind] || '⭐'}</span></button>
+    <div class="fi-body"><p><b>${me ? 'Tú' : esc(who.name || f.name || 'Alguien')}</b> ${esc(me ? f.text.replace(/^ha /, 'has ') : f.text)}</p>
+      <div class="fi-foot"><small>${ago(f.created_at)}</small><div class="reacts">${chips}</div></div></div></li>`;
+}
+function viewFeed(limit) {
+  if (!cloud.user || ui.feedState === 'missing' || ui.feedState === 'error') return '';
+  const list = (ui.feed || []).slice(0, limit || 40);
+  return html`<section class="feed"><div class="edit-row spread"><h2 class="sec-t">${limit ? 'Lo último' : 'Actividad'}</h2>${limit && (ui.feed || []).length > limit ? '<button class="btn ghost" data-act="open" data-id="ranking">Ver todo</button>' : ''}</div>
+    ${list.length ? `<ul class="fl">${list.map(viewFeedItem).join('')}</ul>` : `<p class="hint">${ui.feed ? 'Aún no hay nada. Supera un nivel, entrena o abre un cofre y saldrá aquí para los demás.' : 'Cargando…'}</p>`}</section>`;
+}
 function viewRanking() {
   const left = daysLeftInWeek(), tab = ui.rankTab;
   const head = html`<section class="c-hero rank-hero"><span class="pill">${GLYPH.trophy}Ranking</span>
@@ -943,7 +1009,7 @@ function viewRanking() {
         <span class="who"><b>${esc(r.name)}${r.me ? ' <em>tú</em>' : ''}</b><small class="num">Nivel ${r.level} · racha ${r.streak} ${r.streak === 1 ? 'día' : 'días'}${tab === 'week' ? ` · ${r.chests_week} ${r.chests_week === 1 ? 'cofre' : 'cofres'}` : ''}</small></span>
         <span class="score num">${value}<small>XP</small></span></button></li>`;
     })}</ol>${when(rows.length < 2, '<p class="hint">De momento estás tú solo. Dale a Invitar y pásale el enlace a quien quieras retar.</p>')}`;
-    return head + viewPlaza(rows) + `<p class="hint center">Toca a alguien para ver su perfil.</p><section class="panel">${body}</section>`;
+    return head + viewPlaza(rows) + `<p class="hint center">Toca a alguien para ver su perfil.</p><section class="panel">${body}</section>` + viewFeed();
   }
   return head + `<section class="panel">${body}</section>`;
 }
@@ -1002,7 +1068,7 @@ function viewNewCampaign() {
     <p class="hint">Se crea con un nivel vacío y la abres en modo edición para añadir misiones.</p></section>`;
 }
 function viewHome() {
-  return viewHero() + viewDaily() + viewRankTeaser() + viewWeek() + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
+  return viewHero() + viewDaily() + viewRankTeaser() + viewFeed(3) + viewWeek() + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
     <button class="cc add" data-act="toggleNewCampaign">${GLYPH.plus}Nueva campaña</button></div></section>`
     + when(ui.addingCampaign, viewNewCampaign()) + viewInventory();
 }
@@ -1588,6 +1654,7 @@ const actions = {
     const gold = Math.random() < 0.15, chest = { coins: (30 + Math.floor(Math.random() * 31)) * (gold ? 2 : 1), xp: gold ? 50 : 25, gold };
     update(s => { dayOf(s).chest = chest; });
     showChest(chest);
+    if (gold) postFeed('chest', `ha abierto un cofre dorado: +${chest.coins} monedas`, 'chest:' + today());
   },
   toggleWear: el => update(s => {
     const k = el.dataset.k;
@@ -1667,6 +1734,17 @@ const actions = {
     rows.push(rows.length ? Object.assign({}, rows[rows.length - 1], { done: false }) : blankSet(x));
     saveDraft(); render();
   },
+  react: async el => {
+    if (!cloud.user || !ui.feed) return;
+    const f = ui.feed.find(x => String(x.id) === el.dataset.id), e = el.dataset.k; if (!f) return;
+    f.feed_reactions = f.feed_reactions || [];
+    const mine = f.feed_reactions.some(r => r.emoji === e && r.user_id === cloud.user.id);
+    f.feed_reactions = mine ? f.feed_reactions.filter(r => !(r.emoji === e && r.user_id === cloud.user.id)) : [...f.feed_reactions, { user_id: cloud.user.id, emoji: e }];
+    render();
+    const q = cloud.client.from('feed_reactions');
+    const { error } = mine ? await q.delete().eq('feed_id', f.id).eq('user_id', cloud.user.id).eq('emoji', e) : await q.insert({ feed_id: f.id, user_id: cloud.user.id, emoji: e });
+    if (error) { toast('No se pudo reaccionar'); loadFeed(); }
+  },
   openStats: el => { ui.exStats = el.dataset.id; render(); },
   closeStats: () => { const sh = document.querySelector('.sheet'); if (sh) { sh.classList.add('out'); document.querySelector('.sheet-bg').classList.add('out'); setTimeout(() => { ui.exStats = null; render(); }, 220); } else { ui.exStats = null; render(); } },
   wsGo: el => { const k = +el.dataset.k, n = sessionRoutine().exercises.length; if (k < 0 || k >= n) return; ui.draft.cur = k; saveDraft(); render(); const t = document.querySelector('.ws-tabs .on'); if (t) t.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); const c = document.querySelector('.ws-card'); if (c) { c.classList.add('swap'); c.scrollIntoView({ block: 'start', behavior: 'smooth' }); } },
@@ -1719,6 +1797,8 @@ const actions = {
     window.scrollTo(0, 0);
     sum.records = totalRecords() - recordsBefore; sum.xp = Math.max(0, totalXP() - xpBefore0);
     showWorkoutSummary(sum);
+    const mins = Math.round(sum.secs / 60);
+    postFeed(sum.records ? 'record' : 'workout', `ha entrenado ${r.name}${mins ? ` · ${mins} min` : ''} · ${sum.sets} ${sum.sets === 1 ? 'serie' : 'series'}${sum.records ? ` y ha batido ${sum.records === 1 ? '1 récord' : sum.records + ' récords'}` : ''}`);
   },
   deleteRoutine: el => confirmTwice(el.dataset.id, s => { s.routines = s.routines.filter(x => x.id !== el.dataset.id); }),
   newExercise: el => { ui.exForm = { routine: el.dataset.r, id: null, inSession: !!el.dataset.session }; render(); focusExerciseForm(); },

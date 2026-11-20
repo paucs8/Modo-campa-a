@@ -767,3 +767,23 @@ button.pr svg{width:13px;height:13px}
 @keyframes sheetin{from{transform:translate(-50%,100%)}to{transform:translate(-50%,0)}}
 @keyframes sheetout{to{transform:translate(-50%,100%)}}
 @keyframes fadein{from{opacity:0}to{opacity:1}}
+
+/* Muro de actividad */
+.feed{display:flex;flex-direction:column;gap:10px}
+.fl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.fi{display:flex;gap:12px;align-items:flex-start;background:var(--surface);background:radial-gradient(100% 120% at 0% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 60%), var(--surface);border:1px solid var(--hairline);border-radius:20px;padding:12px}
+.fi-ava{position:relative;flex:none;border:0;background:none;padding:0}
+.fi-ava .ava{width:44px;height:44px}
+.fi-ico{position:absolute;right:-6px;bottom:-4px;width:24px;height:24px;border-radius:50%;background:var(--bg);display:grid;place-items:center;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+.fi-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.fi-body p{margin:0;font-size:14px;line-height:1.35;overflow-wrap:anywhere}
+.fi-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.fi-foot small{color:var(--muted);font-size:12px}
+.reacts{display:flex;gap:4px}
+.react{border:1.5px solid var(--soft-line);background:var(--bg);border-radius:999px;padding:3px 9px;font-size:14px;display:inline-flex;align-items:center;gap:4px;transition:transform .15s var(--spring)}
+.react span{font-size:12px;font-weight:700}
+.react.on{border-color:var(--ink);background:color-mix(in srgb, var(--accent) 35%, var(--bg))}
+.react:active{transform:scale(.88)}
+.react.on{animation:checkpop .4s var(--spring)}
+.k-boss,.k-campaign{border-color:color-mix(in srgb, var(--orange) 60%, transparent)}
+.k-record{border-color:color-mix(in srgb, var(--lime) 70%, transparent)}
