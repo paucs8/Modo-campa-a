@@ -2257,6 +2257,9 @@ const actions = {
 const authError = e => /invalid login/i.test(e.message) ? 'Email o contraseña incorrectos'
   : /not confirmed/i.test(e.message) ? 'Confirma tu email desde el correo que te llegó'
   : /already registered/i.test(e.message) ? 'Ya existe esa cuenta: dale a Entrar'
+  : /rate limit|too many/i.test(e.message) ? 'Demasiados intentos seguidos. Espera unos minutos y vuelve a probar'
+  : /signups? not allowed|signup.*disabled/i.test(e.message) ? 'Ahora mismo no se pueden crear cuentas nuevas. Avisa a Pau'
+  : /password/i.test(e.message) ? 'La contraseña tiene que tener 6 caracteres o más'
   : 'No se pudo: ' + e.message;
 /** Junta otro progreso con el actual sin perder nada de ninguno de los dos. */
 function mergeProgress(cur, inc) {
