@@ -64,7 +64,9 @@ const ITEMS = [
   { key: 'chestOpen', name: 'Cofre de oro', level: 10 },
 ];
 const XP = { train: 5, record: 10 };
-const COINS = { train: 3, record: 5, missionShare: 0.5 };
+// Monedas: desde el 21/11/2026 se ganan más despacio (lo de antes se queda como estaba)
+const COINS = { train: 2, record: 5, missionShare: 0.3 };
+const COINS_OLD = { train: 3, missionShare: 0.5 }, COINS_CUTOFF = '2026-11-21', COINS_CUTOFF_MS = new Date(COINS_CUTOFF + 'T00:00').getTime();
 const HABITS = [
   { key: 'agua', label: 'Bebe 2 litros de agua' },
   { key: 'dormir', label: 'Duerme 7 horas o más' },
@@ -364,8 +366,9 @@ function questText(q) {
 
 // Monedas: se ganan jugando y se gastan en la tienda
 function coinsEarned() {
-  const fromMissions = allMissions().filter(isDone).reduce((a, m) => a + Math.round(m.xp * COINS.missionShare), 0);
-  return fromMissions + S.train.length * COINS.train + totalRecords() * COINS.record + chestTotals().coins + S.coinLog.reduce((a, c) => a + c.amount, 0);
+  const fromMissions = allMissions().filter(isDone).reduce((a, m) => a + Math.round(m.xp * (m.doneAt && m.doneAt >= COINS_CUTOFF_MS ? COINS.missionShare : COINS_OLD.missionShare)), 0);
+  const fromTrain = S.train.reduce((a, d) => a + (d >= COINS_CUTOFF ? COINS.train : COINS_OLD.train), 0);
+  return fromMissions + fromTrain + totalRecords() * COINS.record + chestTotals().coins + S.coinLog.reduce((a, c) => a + c.amount, 0);
 }
 const chestReady = () => !(S.daily[today()] || {}).chest && dailyQuests().every(q => questDone(q));
 const coinsSpent = () => S.purchases.reduce((a, p) => a + p.cost, 0);
@@ -424,6 +427,8 @@ function unlockState(key) {
   if (!def) return { ok: true };
   if (def.level) return { ok: levelOf(totalXP()) >= def.level, how: `Sale en el nivel ${def.level}`, short: `Nv ${def.level}` };
   if (def.cost) return { ok: S.wardrobe.includes(key), how: `Se compra en la tienda por ${def.cost} monedas`, short: `${def.cost}`, cost: def.cost };
+  if (def.streak) return { ok: S.wardrobe.includes(key) || activeStreak() >= def.streak, how: `Se gana con una racha de ${def.streak} días`, short: `Racha ${def.streak}` };
+  if (def.how === 'duel') return { ok: S.wardrobe.includes(key) || Object.values(S.duelsSettled).includes('win'), how: 'Se gana ganando un duelo', short: 'Duelo' };
   return { ok: S.wins.length > 0, how: 'Se gana quedando primero en una liga semanal', short: 'Gana' };
 }
 const lastMondayKey = () => { const d = new Date(); d.setDate(d.getDate() - 7); return mondayKey(d); };
@@ -506,8 +511,15 @@ const isTyping = () => { const a = document.activeElement; return !!a && (a.tagN
 const stamp = s => s.updatedAt || 0;
 
 /** Guarda en el dispositivo y, si hay sesión, sube a Supabase poco después. */
+/** Lo que se gana por racha o duelo se queda para siempre aunque luego pierdas la racha. */
+function grantUnlocks() {
+  Object.entries(Character.PREMIUM).forEach(([key, def]) => {
+    if ((def.streak || def.how === 'duel') && !S.wardrobe.includes(key) && unlockState(key).ok) { S.wardrobe.push(key); setTimeout(() => toast(`🎁 Nueva prenda desbloqueada: ${def.name}`), 1500); }
+  });
+}
 let duelSyncTimer = null;
 function persist() {
+  grantUnlocks();
   if (ui.duels) { clearTimeout(duelSyncTimer); duelSyncTimer = setTimeout(syncDuels, 1500); }
   S.updatedAt = Date.now();
   S.xpDays[today()] = totalXP();
@@ -565,7 +577,7 @@ function listenRanking() {
     .subscribe();
 }
 /* ---------- Escudo de racha: si un día fallas, se gasta solo y tu racha sigue ---------- */
-const SHIELD_COST = 150, SHIELD_MAX = 3;
+const SHIELD_COST = 250, SHIELD_MAX = 3;
 function useShields() {
   if (!S.onboarded || !S.shields) return;
   const days = activeDays(), d = new Date(), gap = [];
@@ -631,12 +643,13 @@ function syncDuels() {
 
 /* ---------- Invitaciones: gastas monedas y un amigo te invita a algo de verdad ---------- */
 const INVITES = [
-  { key: 'cafe', ico: '☕', name: 'Un café', verb: 'a un café', cost: 400 },
-  { key: 'desayuno', ico: '🥐', name: 'Desayunar', verb: 'a desayunar', cost: 1000 },
-  { key: 'cine', ico: '🎬', name: 'Ir al cine', verb: 'al cine', cost: 1800 },
-  { key: 'cena', ico: '🍕', name: 'Cenar', verb: 'a cenar', cost: 3000 },
-  { key: 'plan', ico: '🎳', name: 'Un plan a elegir', verb: 'a un plan (bolos, karting…)', cost: 3500 },
-  { key: 'montana', ico: '⛰️', name: 'Día de montaña', verb: 'a un día de montaña', cost: 5000 },
+  { key: 'cafe', ico: '☕', name: 'Un café', verb: 'a un café', cost: 500 },
+  { key: 'desayuno', ico: '🥐', name: 'Desayunar', verb: 'a desayunar', cost: 1200 },
+  { key: 'cine', ico: '🎬', name: 'Ir al cine', verb: 'al cine', cost: 2000 },
+  { key: 'plan', ico: '🎳', name: 'Una tarde de plan', verb: 'a una tarde de plan (bolos, karting…)', cost: 3000 },
+  { key: 'cena', ico: '🍕', name: 'Cenar', verb: 'a cenar', cost: 3500 },
+  { key: 'montana', ico: '⛰️', name: 'Plan de 1 día a elegir', verb: 'a un plan de un día (montaña, playa, excursión…)', cost: 5000 },
+  { key: 'finde', ico: '🏕️', name: 'Plan de 2 días a elegir', verb: 'a una escapada de dos días', cost: 9000 },
 ];
 const THANKS = 0.2;   // quien invita recupera un 20% en monedas al cumplir
 const inviteOf = k => INVITES.find(i => i.key === k) || { ico: '🎁', name: k, verb: 'a algo', cost: 0 };
@@ -1179,7 +1192,7 @@ function viewInviteShop(have) {
         ${when(inv.to, `<button class="btn primary wide" data-act="buyInvite">${ui.armed === 'buy:invite' ? `¿Gastar ${it.cost} monedas?` : `Canjear: ${esc((friends.find(f => f.user_id === inv.to) || {}).name || '')} te invita ${esc(it.verb)}`}</button>`)}</div>`}</li>`;
   }).join('');
   return html`<section class="panel invites"><h3>Invitaciones <span class="label">un amigo te invita</span></h3><ul class="inv-list">${cards}</ul>
-    <p class="hint">Eliges a quién y le llega el vale. Si no puede, te devolvemos las monedas. Cuando cumple, recupera un ${THANKS * 100}% de agradecimiento.</p></section>`;
+    <p class="hint">Ganas monedas con misiones, entrenos, récords, cofres y duelos. Eliges a quién y le llega el vale. Si no puede, te devolvemos las monedas. Cuando cumple, recupera un ${THANKS * 100}% de agradecimiento.</p></section>`;
 }
 function viewDuels() {
   if (!cloud.user || !ui.duels || ui.duelsState !== 'ok') return '';
@@ -1637,25 +1650,12 @@ function viewBoss(c) {
 function viewShop() {
   const have = coins(), recent = S.purchases.slice(-6).reverse();
   return html`<section class="c-hero shop-hero"><span class="pill">${GLYPH.bag}Tienda</span>
-    <h2>Tus recompensas</h2><p>Canjea monedas por planes con tus amigos o por tus propios premios.</p>
-    <div class="row"><span class="big num coins-big"><img src="${IMG.coin}" alt=""><span data-count="shop">${have}</span></span>
-      <button class="btn dark" data-act="toggleEditing">${ui.editing ? 'Listo' : 'Editar'}</button></div></section>
+    <h2>Tus recompensas</h2><p>Canjea monedas por planes con tus amigos y cosas para tu personaje.</p>
+    <div class="row"><span class="big num coins-big"><img src="${IMG.coin}" alt=""><span data-count="shop">${have}</span></span></div></section>
     <section class="shield-card ${S.shields ? 'has' : ''}"><div class="shield-ico">🛡️<b class="num">${S.shields}</b></div>
       <div class="txt"><b>Escudo de racha</b><small>Si un día no haces nada, se gasta solo y tu racha sigue. Puedes tener ${SHIELD_MAX}.</small>${coinBadge(SHIELD_COST)}</div>
       ${S.shields >= SHIELD_MAX ? '<span class="owned">Al máximo</span>' : have >= SHIELD_COST ? `<button class="btn ${ui.armed === 'buy:shield' ? 'primary' : 'dark'}" data-act="buyShield">${ui.armed === 'buy:shield' ? '¿Comprar?' : 'Comprar'}</button>` : `<span class="need num">Te faltan ${SHIELD_COST - have}</span>`}</section>
     ${viewInviteShop(have)}${viewMyVouchers(false)}
-    <section class="panel"><h3>Mis premios <span class="label">para ti solo</span></h3>
-      <ul class="rewards">${S.rewards.map(r => {
-        const can = have >= r.cost, armed = ui.armed === 'buy:' + r.id;
-        return `<li class="reward ${can ? 'can' : ''}"><div class="txt"><b>${esc(r.name)}</b>${coinBadge(r.cost)}</div>
-          ${ui.editing ? confirmBtn('deleteReward', r.id, 'Borrar')
-            : can ? `<button class="btn ${armed ? 'primary' : ''}" data-act="buyReward" data-id="${r.id}">${armed ? '¿Canjear?' : 'Canjear'}</button>`
-            : `<span class="need num">Te faltan ${r.cost - have}</span>`}</li>`;
-      })}${when(!S.rewards.length, '<li><small class="hint">Añade tu primer premio.</small></li>')}</ul>
-      ${ui.addingReward || ui.editing ? html`<form class="adde" data-form="addReward"><input name="n" placeholder="Premio (ej: Zapatillas nuevas)" maxlength="60" required aria-label="Premio">
-        <input name="c" type="number" inputmode="numeric" min="10" max="99999" step="10" value="300" aria-label="Precio en monedas" style="width:96px"><button class="btn primary">Añadir</button></form>`
-        : '<button class="btn add-ex" data-act="addRewardForm">+ Premio</button>'}
-      <p class="hint">Ganas monedas con cada misión (la mitad de su XP), cada entreno (+${COINS.train}), cada récord (+${COINS.record}) y el cofre diario.</p></section>
     <section class="panel"><h3>Armario especial <span class="label">para tu personaje</span></h3>
       <ul class="wardrobe">${Object.entries(Character.PREMIUM).map(([key, def]) => {
         const [field, value] = key.split(':'), st = unlockState(key), armed = ui.armed === 'ward:' + key;
@@ -1701,7 +1701,7 @@ function render() {
 
 // ---------- Detalles visuales tras pintar: paneles plegables, animaciones de entrada y de "hecho" ----------
 const FOLD_KEY = 'modo-campana-plegados';
-const FOLD_CLOSED = ['Mis premios', 'Cuenta', 'Tu cuenta', 'Sincronización', 'Canjeado', 'Armario especial'];   // empiezan cerrados
+const FOLD_CLOSED = ['Cuenta', 'Tu cuenta', 'Sincronización', 'Canjeado'];   // empiezan cerrados
 const NO_FOLD = ['Nueva campaña', 'Mandar una idea', 'Para Claude'];
 let folds = {}; try { folds = JSON.parse(localStorage.getItem(FOLD_KEY) || '{}'); } catch { folds = {}; }
 const fx = { view: null, done: null, counts: {} };
@@ -1898,7 +1898,7 @@ const actions = {
   openChest: () => {
     const date = logDate(), quests = dailyQuests(date);
     if (!quests.every(q => questDone(q, date)) || (S.daily[date] || {}).chest) return;
-    const gold = Math.random() < 0.15, chest = { coins: (30 + Math.floor(Math.random() * 31)) * (gold ? 2 : 1), xp: gold ? 50 : 25, gold };
+    const gold = Math.random() < 0.15, chest = { coins: (15 + Math.floor(Math.random() * 16)) * (gold ? 2 : 1), xp: gold ? 50 : 25, gold };
     update(s => { dayOf(s, date).chest = chest; });
     showChest(chest);
     if (gold) postFeed('chest', `ha abierto un cofre dorado: +${chest.coins} monedas`, 'chest:' + date);

@@ -10,25 +10,36 @@ const W = 64, H = 128;
 
 // ---------- Catálogo: lo que se puede elegir ----------
 const STYLES = {
-  hairStyle: { corto: 'Corto', revuelto: 'Revuelto', rapado: 'Rapado', melena: 'Melena', largo: 'Largo', mono: 'Moño', coletas: 'Coletas', trenzas: 'Trenzas', rizos: 'Rizos', afro: 'Afro' },
-  glasses: { no: 'Sin gafas', finas: 'Finas', pasta: 'De pasta', sol: 'De sol', estrella: 'De estrella' },
+  hairStyle: { corto: 'Corto', revuelto: 'Revuelto', rapado: 'Rapado', melena: 'Melena', largo: 'Largo', mono: 'Moño', coletas: 'Coletas', trenzas: 'Trenzas', rizos: 'Rizos', afro: 'Afro', cresta: 'Cresta' },
+  glasses: { no: 'Sin gafas', finas: 'Finas', pasta: 'De pasta', sol: 'De sol', estrella: 'De estrella', corazon: 'De corazón', vr: 'Visor futurista' },
   beard: { no: 'Nada', bigote: 'Bigote', barba: 'Barba' },
-  head: { no: 'Nada', gorra: 'Gorra', gorro: 'Gorro', bucket: 'Bucket', bandana: 'Bandana', horquillas: 'Horquillas', gato: 'Gorro de gato', corona: 'Corona' },
+  head: { no: 'Nada', gorra: 'Gorra', gorro: 'Gorro', bucket: 'Bucket', bandana: 'Bandana', horquillas: 'Horquillas', gato: 'Gorro de gato', corona: 'Corona', vikingo: 'Casco vikingo', halo: 'Aureola' },
   top: { camiseta: 'Camiseta', sudadera: 'Sudadera', jersey: 'Jersey', capas: 'Capas', camisa: 'Camisa abierta', chaqueta: 'Chaqueta' },
-  pattern: { liso: 'Liso', rayas: 'Rayas', cuadros: 'Cuadros', franja: 'Franja', llamas: 'Llamas' },
+  pattern: { liso: 'Liso', rayas: 'Rayas', cuadros: 'Cuadros', franja: 'Franja', llamas: 'Llamas', camuflaje: 'Camuflaje', galaxia: 'Galaxia', arcoiris: 'Arcoíris' },
   bottom: { cargo: 'Cargo ancho', vaqueros: 'Vaqueros', chandal: 'Chándal', corto: 'Pantalón corto', falda: 'Falda' },
   legs: { piel: 'Sin medias', medias: 'Medias', rejilla: 'Rejilla', rayas: 'Medias de rayas' },
-  shoes: { bambas: 'Bambas', altas: 'Bambas altas', botas: 'Botas', plataformas: 'Plataformas', doradas: 'Doradas' },
-  bag: { no: 'Nada', bolso: 'Bolso cruzado', mochila: 'Mochila', rinonera: 'Riñonera', capa: 'Capa' },
+  shoes: { bambas: 'Bambas', altas: 'Bambas altas', botas: 'Botas', plataformas: 'Plataformas', doradas: 'Doradas', neon: 'Neón' },
+  bag: { no: 'Nada', bolso: 'Bolso cruzado', mochila: 'Mochila', rinonera: 'Riñonera', capa: 'Capa', guitarra: 'Guitarra', alas: 'Alas' },
 };
 // Prendas especiales: se ganan, se compran con monedas o salen al subir de nivel
 const PREMIUM = {
   'head:corona': { name: 'Corona', how: 'win' },
-  'glasses:estrella': { name: 'Gafas de estrella', cost: 300 },
-  'head:gato': { name: 'Gorro de gato', cost: 400 },
-  'pattern:llamas': { name: 'Estampado de llamas', cost: 500 },
+  'bag:alas': { name: 'Alas', how: 'duel' },
+  'head:halo': { name: 'Aureola', streak: 14 },
+  'shoes:neon': { name: 'Zapatillas de neón', streak: 30 },
+  'glasses:corazon': { name: 'Gafas de corazón', cost: 600 },
+  'glasses:estrella': { name: 'Gafas de estrella', cost: 700 },
+  'pattern:camuflaje': { name: 'Estampado camuflaje', cost: 800 },
+  'glasses:vr': { name: 'Visor futurista', cost: 900 },
+  'head:gato': { name: 'Gorro de gato', cost: 900 },
+  'head:vikingo': { name: 'Casco vikingo', cost: 1100 },
+  'bag:guitarra': { name: 'Guitarra a la espalda', cost: 1200 },
+  'pattern:llamas': { name: 'Estampado de llamas', cost: 1300 },
+  'pattern:galaxia': { name: 'Estampado galaxia', cost: 1600 },
+  'hairStyle:cresta': { name: 'Cresta', level: 4 },
   'shoes:doradas': { name: 'Zapatillas doradas', level: 6 },
   'bag:capa': { name: 'Capa', level: 8 },
+  'pattern:arcoiris': { name: 'Estampado arcoíris', level: 10 },
 };
 const free = (field, list) => list.filter(v => !PREMIUM[field + ':' + v]);
 // Paleta cálida y algo apagada, como ropa real
@@ -123,11 +134,11 @@ function paint(input, { items = [], closed = false, mood = 'idle' } = {}) {
   const skin = tones(L.skin), hairA = tones(L.hair), hairB = L.hair2 ? tones(L.hair2) : hairA;
   const top = tones(L.topColor), top2 = tones(L.top2), stripe = tones(L.stripe), mixT = tones(mix(rgb(L.topColor), rgb(L.stripe), 0.7)), stripeL = tones(tint(rgb(L.stripe), 0.4));
   const bot = tones(L.bottomColor), legC = tones(L.legsColor), bag = tones(L.bagColor), headC = tones(L.headColor);
-  const shoe = L.shoes === 'doradas' ? tones(GOLD) : tones(L.shoesColor);
-  const hatOn = ['gorra', 'gorro', 'bucket', 'gato', 'corona'].includes(L.head);
+  const shoe = L.shoes === 'doradas' ? tones(GOLD) : L.shoes === 'neon' ? tones([70, 240, 150]) : tones(L.shoesColor);
+  const hatOn = ['gorra', 'gorro', 'bucket', 'gato', 'corona', 'vikingo'].includes(L.head);
 
   // Pelo: segundo color en las puntas, mechones y brillo
-  const tipsFrom = { corto: 20, revuelto: 22, rapado: 99, melena: 26, largo: 34, mono: 99, coletas: 30, trenzas: 36, rizos: 24, afro: 22 }[L.hairStyle] || 99;
+  const tipsFrom = { corto: 20, revuelto: 22, rapado: 99, melena: 26, largo: 34, mono: 99, coletas: 30, trenzas: 36, rizos: 24, afro: 22, cresta: 8 }[L.hairStyle] || 99;
   const curly = L.hairStyle === 'rizos' || L.hairStyle === 'afro';
   const strands = (x, y, c) => {
     const T = y >= tipsFrom ? hairB : hairA;
@@ -138,11 +149,16 @@ function paint(input, { items = [], closed = false, mood = 'idle' } = {}) {
   };
   const hair = (y0, y1, span, zz) => form(y0, y1, span, hairA, zz, { color: strands, texture: false });
 
+  const CAMO = [tones([92, 110, 64]), tones([120, 98, 66]), tones([52, 64, 44])], GALAXY = tones([40, 34, 92]), GALAXY2 = tones([84, 44, 120]);
+  const RAINBOW = [[226, 80, 74], [240, 150, 60], [240, 210, 80], [96, 190, 110], [70, 140, 220], [150, 100, 210]].map(c => tones(c));
   // Estampado de la prenda de arriba
   const pattern = (x, y, c, T = top) => {
     if (L.pattern === 'rayas') return y % 6 < 3 ? retone(c, T, stripe) : null;
     if (L.pattern === 'cuadros') return (x % 6 === 0 || y % 6 === 0) ? retone(c, T, mixT) : null;
     if (L.pattern === 'franja') return (y >= 48 && y <= 53) ? retone(c, T, stripe) : null;
+    if (L.pattern === 'camuflaje') { const n = noise(x >> 2, y >> 2) % 4; return n === 0 ? null : retone(c, T, CAMO[n - 1]); }
+    if (L.pattern === 'galaxia') { const n = noise(x, y) % 37; return n === 0 ? WHITE : n === 1 ? [190, 170, 255] : retone(c, T, (noise(x >> 3, y >> 3) % 3 === 0) ? GALAXY2 : GALAXY); }
+    if (L.pattern === 'arcoiris') return retone(c, T, RAINBOW[Math.floor((y - 35) / 5) % RAINBOW.length] || RAINBOW[0]);
     if (L.pattern === 'llamas') { const crest = 54 - [0, 4, 1, 7, 2, 0, 5, 9, 1, 3][x % 10]; if (y >= crest + 6) return retone(c, T, stripeL); if (y >= crest) return retone(c, T, stripe); }
     return null;
   };
@@ -151,6 +167,18 @@ function paint(input, { items = [], closed = false, mood = 'idle' } = {}) {
   if (L.bag === 'capa') {
     form(34, 104, y => { const t = (y - 34) / 70; return [lerp(18, 6, t), lerp(45, 57, t)]; }, bag, 1, { color: (x, y, c) => ((x + Math.round(y / 9)) % 7 === 0 ? bag.s1 : null) });
     hline(104, 6, 57, bag.s2);
+  }
+  if (L.bag === 'alas') {   // alas blancas con plumas, abiertas detrás de los hombros
+    const wing = tones([246, 242, 238]);
+    const outer = y => Math.round(1 + Math.pow(Math.max(0, (y - 26) / 54), 1.4) * 13) + ((y % 7) < 2 && y > 40 ? 1 : 0);
+    form(24, 80, y => [y < 28 ? 8 + (28 - y) * 2 : outer(y), 18], wing, 0, { color: (x, y, c) => ((y % 7) === 0 && x < 16 ? wing.s1 : (x - outer(y) < 2 ? wing.s1 : null)) });
+    form(24, 80, y => [45, y < 28 ? 55 - (28 - y) * 2 : 63 - outer(y)], wing, 0, { color: (x, y, c) => ((y % 7) === 0 && x > 47 ? wing.s1 : (63 - outer(y) - x < 2 ? wing.s2 : null)) });
+  }
+  if (L.bag === 'guitarra') {   // guitarra a la espalda: cuerpo asomando abajo a la derecha y mástil por encima del hombro
+    const wood = tones([196, 120, 60]);
+    blob(48, 76, 8, 10, wood, 1, { color: (x, y, c) => ((x - 48) ** 2 + (y - 74) ** 2 < 6 ? DARK : null) });
+    for (let i = 0; i <= 44; i++) { const x = 45 + Math.round(i * 0.22), y = 70 - i; z = 1; set(x, y, [60, 40, 30]); set(x + 1, y, [90, 62, 44]); }
+    form(22, 27, y => [54, 57], tones(DARK), 1);
   }
   const hairBack = {
     melena: () => hair(14, 36, y => [22, 41], 2),
@@ -254,7 +282,7 @@ function paint(input, { items = [], closed = false, mood = 'idle' } = {}) {
     z = zz;
     const s0 = left ? a - 2 : a, s1 = left ? b : b + 2;
     const light = shoe.base[0] + shoe.base[1] + shoe.base[2] > 560;
-    const sole = boots ? INK : L.shoes === 'doradas' ? mul(GOLD, 0.7) : light ? [190, 182, 168] : [214, 206, 192];
+    const sole = boots ? INK : L.shoes === 'neon' ? [250, 80, 190] : L.shoes === 'doradas' ? mul(GOLD, 0.7) : light ? [190, 182, 168] : [214, 206, 192];
     for (let y = 122 - lift; y <= 123; y++) hline(y, s0, s1, y === 123 ? mul(sole, 0.82) : sole);
   };
   foot(feet.l, true, feet.under ? 4 : 10); foot(feet.r, false, feet.under ? 5 : 11);
@@ -326,6 +354,7 @@ function paint(input, { items = [], closed = false, mood = 'idle' } = {}) {
     mochila: () => { z = 20; for (const x of [22, 23, 40, 41]) vline(x, 37, 58, DARK); dots([[22, 48], [23, 48], [40, 48], [41, 48]], METAL); form(32, 36, y => [19, 22], bag, 1); form(32, 36, y => [41, 44], bag, 1); },
     rinonera: () => { z = 20; for (let i = 0; i <= 26; i++) set(44 - i, 38 + Math.round(i * 0.75), DARK); form(54, 62, y => [y === 54 || y === 62 ? 26 : 25, y === 54 || y === 62 ? 37 : 38], bag, 21); z = 21; hline(57, 26, 37, bag.s2); set(36, 57, METAL); },
     capa: () => { z = 20; set(25, 37, GOLD); set(26, 37, GOLD); set(37, 37, GOLD); set(38, 37, GOLD); },
+    guitarra: () => { z = 20; for (let i = 0; i <= 34; i++) set(19 + Math.round(i * 0.7), 36 + i, i % 5 ? [120, 70, 40] : GOLD); },
   }[L.bag] || (() => {}))();
   if (has('llavero')) { z = 22; for (let y = 68; y <= 74; y++) set(41, y, y % 2 ? METAL : [120, 116, 112]); form(75, 80, y => [39, 43], tones(GOLD), 22); set(40, 77, mul(GOLD, 0.6)); set(42, 77, mul(GOLD, 0.6)); }
   if (has('handycam')) { form(64, 72, y => [4, 13], tones(DARK), 23); z = 23; hline(66, 5, 9, [110, 106, 104]); set(5, 70, RED); form(61, 63, y => [9, 13], tones(DARK), 23); dots([[3, 67], [3, 68]], METAL); form(68, 75, y => [11, 16], skin, 24); }
@@ -383,6 +412,11 @@ function paint(input, { items = [], closed = false, mood = 'idle' } = {}) {
       for (const x0 of [21, 40]) { form(20, 50, y => [x0, x0 + 2], hairA, 28, { color: (x, y, c) => (y >= tipsFrom ? retone(c, hairA, hairB) : (y % 3 === 0 ? hairA.s2 : (y % 3 === 1 ? hairA.hi : null))) }); z = 28; hline(51, x0, x0 + 2, RED); hline(52, x0, x0 + 2, hairB.base); set(x0 + 1, 53, hairB.base); }
     },
     rizos: () => { if (!hatOn) hair(7, 16, y => [y < 9 ? 25 : 22, y < 9 ? 38 : 41], 27); hair(15, 30, y => [20, 25 - (y > 26 ? 1 : 0)], 27); hair(15, 30, y => [38 + (y > 26 ? 1 : 0), 43], 27); },
+    cresta: () => {
+      const buzz = tones(mix(hairA.base, skin.base, 0.5));
+      form(11, 15, y => (y === 11 ? [27, 36] : [25, 38]), buzz, 27); form(15, 19, y => [24, 25], buzz, 27); form(15, 19, y => [38, 39], buzz, 27);
+      if (!hatOn) form(1, 15, y => (y < 4 ? [30 + (y % 2), 33 - (y % 2)] : [29, 34]), hairA, 28, { color: (x, y, c) => (y < 6 && (x + y) % 3 === 0 ? hairB.hi : (y < tipsFrom + 4 ? retone(c, hairA, hairB) : null)), texture: false });
+    },
     afro: () => { if (!hatOn) crown(9); hair(15, 24, y => [21, 25], 27); hair(15, 24, y => [38, 42], 27); },
   }[L.hairStyle] || (() => {}))();
   if (L.bangs && L.hairStyle !== 'rapado') { hair(14, 17, y => [25, 38], 27); z = 27; for (let x = 25; x <= 38; x++) if (x % 3 !== 0) set(x, 18, hairA.s1); }
@@ -396,6 +430,13 @@ function paint(input, { items = [], closed = false, mood = 'idle' } = {}) {
       star.forEach((line, dy) => [...line].forEach((ch, dx) => { if (ch === '#') set(cx - 3 + dx, 18 + dy, PINK); }));
       hline(21, cx - 1, cx + 1, [80, 30, 70]); set(cx, 22, [80, 30, 70]); set(cx - 1, 21, WHITE);
     }
+  } else if (L.glasses === 'corazon') {
+    const heart = ['.##.##.', '#######', '#######', '.#####.', '..###..', '...#...'];
+    for (const cx of [28, 35]) heart.forEach((line, dy) => [...line].forEach((ch, dx) => { if (ch === '#') set(cx - 3 + dx, 19 + dy, dy === 1 && dx === 1 ? [255, 190, 210] : [226, 60, 100]); }));
+    hline(21, 31, 32, [160, 30, 70]);
+  } else if (L.glasses === 'vr') {
+    form(19, 24, y => [23, 40], tones([40, 40, 52]), 29, { color: (x, y) => (y === 20 && x > 25 && x < 38 ? [90, 230, 255] : y === 21 && x > 26 && x < 30 ? [200, 250, 255] : null) });
+    z = 29; hline(19, 23, 40, [24, 24, 30]); set(22, 21, [24, 24, 30]); set(41, 21, [24, 24, 30]);
   } else if (L.glasses !== 'no') {
     const frame = L.glasses === 'finas' ? [120, 96, 72] : INK;
     for (const ex of [28, 34]) {
@@ -430,6 +471,20 @@ function paint(input, { items = [], closed = false, mood = 'idle' } = {}) {
       form(14, 17, y => [23, 40], hc, 31, { color: (x, y, c) => (x % 2 ? hc.s1 : c) });
       for (const [x0, dir] of [[24, 1], [39, -1]]) for (let r = 0; r < 5; r++) for (let k = 0; k <= 4 - r; k++) { z = 30; set(x0 + dir * k, 5 - r, r > 0 && k > 0 && k < 4 - r ? [240, 150, 170] : hc.base); }
       z = 30; dots([[28, 10], [35, 10]], DARK); hline(12, 30, 33, hc.s1);
+    },
+    vikingo: () => {
+      const metal = tones([150, 150, 156]), horn = tones([236, 222, 196]);
+      form(5, 15, y => (y === 5 ? [28, 35] : y === 6 ? [26, 37] : y === 7 ? [25, 38] : [24, 39]), metal, 30, { color: (x, y) => (x === 31 || x === 32 ? metal.s1 : null) });
+      form(13, 16, y => [23, 40], tones([120, 84, 52]), 31, { color: (x, y) => (x % 4 === 0 && y === 14 ? METAL : null) });
+      for (const dir of [-1, 1]) for (let i = 0; i < 10; i++) {   // cuernos curvos hacia arriba, gruesos en la base
+        const x = dir < 0 ? 23 - Math.round(4 * Math.sin(i / 9 * Math.PI * 0.9)) : 40 + Math.round(4 * Math.sin(i / 9 * Math.PI * 0.9)), y = 12 - i, w = i < 3 ? 2 : i < 7 ? 1 : 0; z = 30;
+        for (let k = -w; k <= w; k++) set(x + k, y, k === -w ? horn.hi : k === w ? horn.s1 : horn.base);
+        if (i === 9) set(x, y, horn.s2);
+      }
+    },
+    halo: () => {
+      z = 31; const g = [255, 222, 120];
+      hline(2, 27, 36, g); hline(5, 27, 36, mul(g, 0.85)); set(25, 3, g); set(26, 3, g); set(37, 3, g); set(38, 3, g); set(25, 4, mul(g, 0.85)); set(26, 4, mul(g, 0.85)); set(37, 4, mul(g, 0.85)); set(38, 4, mul(g, 0.85));
     },
     corona: () => {
       const g = tones(GOLD);
