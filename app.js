@@ -1388,7 +1388,7 @@ function viewLogBanner() {
 }
 function viewDaily() {
   const date = logDate(), quests = dailyQuests(date), done = quests.filter(q => questDone(q, date)).length, chest = (S.daily[date] || {}).chest, ready = done === quests.length && !chest;
-  return html`<section class="daily"><div class="edit-row spread"><h2 class="sec-t">Misiones ${deDay(ui.logDay || 0)}</h2><span class="label num">${done}/${quests.length}</span></div>${viewDaySwitch()}
+  return html`<section class="daily"><div class="edit-row spread"><h2 class="sec-t">Misiones ${deDay(ui.logDay || 0)}</h2><span class="label num">${done}/${quests.length}</span></div>
     <ul class="quests">${quests.map(q => {
       const ok = questDone(q, date), t = questText(q);
       const act = q.kind === 'habit' ? `data-act="toggleHabit" data-k="${q.key}"` : q.kind === 'train' && ui.logDay ? 'data-act="toggleTrainedToday"' : q.kind === 'advance' ? `data-act="open" data-id="${q.cid}"` : 'data-act="open" data-id="fisico"';
@@ -1403,7 +1403,11 @@ function viewWeek() {
   const trained = new Set(S.train), names = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'], days = weekDays();
   const n = days.filter(d => trained.has(d.key)).length;
   return html`<section class="stack"><div class="edit-row spread"><h2 class="sec-t">Esta semana</h2><span class="label">${n} ${n === 1 ? 'entreno' : 'entrenos'} · racha ${streak()}</span></div>
-    <div class="week">${days.map((d, i) => html`<div class="day ${d.isToday ? 'today' : ''}" title="${trained.has(d.key) ? 'Entrenaste' : 'Sin entreno'}">${trained.has(d.key) ? GLYPH.star : '<span class="ph"></span>'}<span class="d">${names[i]}</span><b>${d.date.getDate()}</b></div>`)}</div></section>`;
+    <div class="week" role="tablist" aria-label="Elige el día que apuntas">${days.map((d, i) => {
+      const back = Math.round((new Date(today() + 'T12:00') - new Date(d.key + 'T12:00')) / 86400000), can = back >= 0 && back <= maxBack(), sel = can && back === (ui.logDay || 0);
+      return html`<button class="day ${d.isToday ? 'today' : ''} ${sel ? 'sel' : ''} ${back < 0 ? 'future' : ''}" ${can ? `data-act="logDay" data-k="${back}"` : 'disabled'} role="tab" aria-selected="${sel}" aria-label="${names[i]} ${d.date.getDate()}${trained.has(d.key) ? ', entrenado' : ''}">${trained.has(d.key) ? GLYPH.star : '<span class="ph"></span>'}<span class="d">${names[i]}</span><b>${d.date.getDate()}</b></button>`;
+    })}</div>
+    <p class="hint week-hint">${ui.logDay ? `Estás apuntando lo ${deDay(ui.logDay)}. Toca hoy para volver.` : 'Toca un día de esta semana para apuntar lo que se te olvidó.'}</p></section>`;
 }
 function viewCampaignCard(c) {
   const li = currentLevelIndex(c), l = c.levels[li], next = l && l.missions.find(m => !isDone(m)), p = campaignProgress(c);
@@ -1436,7 +1440,7 @@ function viewNewCampaign() {
     <p class="hint">Las ya montadas las puedes editar después: cambiar misiones, añadir niveles… Las de cero empiezan con un nivel vacío.</p></section>`;
 }
 function viewHome() {
-  return viewInstallCard() + viewHero() + viewDaily() + viewMyVouchers(true) + viewDuels() + viewRankTeaser() + viewFeed(3) + viewWeek() + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
+  return viewInstallCard() + viewHero() + viewWeek() + viewDaily() + viewMyVouchers(true) + viewDuels() + viewRankTeaser() + viewFeed(3) + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
     <button class="cc add" data-act="toggleNewCampaign">${GLYPH.plus}Nueva campaña</button></div></section>`
     + when(ui.addingCampaign, viewNewCampaign()) + viewInventory();
 }

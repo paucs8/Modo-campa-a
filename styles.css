@@ -940,3 +940,15 @@ html{background:var(--bg)}
 .day-switch{max-width:100%;overflow-x:auto;scrollbar-width:none;flex-wrap:nowrap}
 .day-switch::-webkit-scrollbar{display:none}
 .day-switch button{flex:none;white-space:nowrap}
+
+/* La semana como selector de día */
+button.day{color:var(--ink);font:inherit;cursor:pointer;transition:transform .15s var(--ease), background .2s, color .2s}
+button.day:active{transform:scale(.94)}
+button.day.future{opacity:.35;cursor:default}
+button.day:disabled:not(.future){opacity:.5}
+.day.today:not(.sel){background:none;color:var(--ink);border-color:var(--ink)}
+.day.sel{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+.day.sel .d{color:inherit;opacity:.75}
+.day.sel:not(.today){background:var(--orange);color:#111;border-color:var(--orange)}
+.week-hint{margin:-2px 0 0}
+.day.today:not(.sel) .d{color:var(--muted);opacity:1}
