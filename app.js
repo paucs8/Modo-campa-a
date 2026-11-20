@@ -188,7 +188,7 @@ function migrate(s) {
   delete s.look.preset; delete s.look.star;
   s.look = Character.upgrade(s.look); // personaje por capas (v2)
   // Armario especial, semanas ganadas, cierre del lunes visto y cañas enviadas
-  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {}; s.feedSent = s.feedSent || {}; s.shields = s.shields || 0; s.shielded = s.shielded || []; s.coinLog = s.coinLog || []; s.duelsSettled = s.duelsSettled || {}; s.duelBase = s.duelBase || {}; s.vouchersDone = s.vouchersDone || {};
+  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {}; s.feedSent = s.feedSent || {}; s.shields = s.shields || 0; s.shielded = s.shielded || []; s.coinLog = s.coinLog || []; s.duelsSettled = s.duelsSettled || {}; s.duelBase = s.duelBase || {}; s.vouchersDone = s.vouchersDone || {}; s.rivals = s.rivals || []; if (s.rivalsOnly === undefined) s.rivalsOnly = true;
   if (s.photo === undefined) s.photo = null;
   s.v = 5;
   return s;
@@ -697,7 +697,7 @@ function listenNudges() {
 }
 function queueNudges(rows) {
   const known = new Set(ui.nudgeQueue.map(n => n.id));
-  ui.nudgeQueue.push(...rows.filter(r => !known.has(r.id)));
+  ui.nudgeQueue.push(...rows.filter(r => !known.has(r.id) && isRival(r.from_id)));
   if (!document.querySelector('.nudge-pop')) showNextNudge();
 }
 async function showNextNudge() {
@@ -748,9 +748,12 @@ function maybeShowRecap() {
 }
 
 /** Tabla ordenada: en la semana manda la XP de esta semana (quien no ha jugado esta semana va con 0). */
-function rankedPlayers(tab = ui.rankTab) {
+/** Solo compites con tus rivales si has elegido alguno (y no estás viendo "Todos"). */
+const rivalsOn = () => S.rivals.length > 0 && S.rivalsOnly;
+const isRival = id => !rivalsOn() || (cloud.user && id === cloud.user.id) || S.rivals.includes(id);
+function rankedPlayers(tab = ui.rankTab, all = false) {
   const monday = mondayKey();
-  const rows = (ui.ranking || []).map(r => (r.user_id === (cloud.user && cloud.user.id)
+  const rows = (ui.ranking || []).filter(r => all || isRival(r.user_id)).map(r => (r.user_id === (cloud.user && cloud.user.id)
     ? { ...r, name: S.name, color: S.color, photo: S.photo, look: Object.assign({}, S.look, { items: wearing() }), level: levelOf(totalXP()), xp: totalXP(), week: monday, week_xp: weekXP(), streak: activeStreak(), chests_week: chestsThisWeek(), me: true }
     : { ...r, week_xp: r.week === monday ? r.week_xp : 0, chests_week: r.week === monday ? r.chests_week : 0 }));
   const score = r => (tab === 'week' ? r.week_xp : r.xp);
@@ -1056,9 +1059,9 @@ function viewPlaza(rows) {
   </section>`;
 }
 function viewPlayer() {
-  const rows = ui.ranking ? rankedPlayers('week') : [], r = rows.find(x => x.user_id === ui.playerId);
+  const rows = ui.ranking ? rankedPlayers('week') : [], r = (ui.ranking ? rankedPlayers('week', true) : []).find(x => x.user_id === ui.playerId);
   if (!r) return '<section class="panel"><p class="hint">No encuentro a esta persona. Vuelve al ranking.</p><button class="btn" data-act="open" data-id="ranking">Ir al ranking</button></section>';
-  const pos = rows.indexOf(r) + 1, bg = colorHex(r.color), ink = inkFor(bg), m = playerMood(r);
+  const pos = Math.max(1, rows.findIndex(x => x.user_id === r.user_id) + 1), bg = colorHex(r.color), ink = inkFor(bg), m = playerMood(r);
   const items = ITEMS.filter(i => r.level >= i.level);
   return html`<section class="c-hero player-hero" style="--hero-bg:${bg};--hero-ink:${ink}" data-ink="${ink === '#111111' ? 'dark' : 'light'}">
       <div class="player-top"><div class="player-char ${'m-' + m}"><img src="${playerImage(r)}" alt=""></div>
@@ -1068,6 +1071,7 @@ function viewPlayer() {
       <p class="hint num">${r.xp} XP en total.</p></section>
     <section class="panel"><h3>Objetos <span class="label">${items.length}/${ITEMS.length}</span></h3>
       ${items.length ? `<div class="mini-items">${items.map(i => `<span title="${i.name}"><img src="${IMG[i.key]}" alt="${i.name}"></span>`).join('')}</div>` : '<p class="hint">Todavía no ha desbloqueado ninguno.</p>'}</section>
+    ${when(!r.me, `<button class="btn wide ${S.rivals.includes(r.user_id) ? '' : 'dark'} rival-btn" data-act="toggleRival" data-id="${esc(r.user_id)}">${S.rivals.includes(r.user_id) ? '★ Es tu rival · quitar' : '☆ Añadir como rival'}</button>`)}
     ${when(!r.me && cloud.user, viewDuelForm(r))}
     ${r.me ? '<button class="btn wide" data-act="open" data-id="profile">Editar mi perfil</button>'
       : S.nudgesSent[r.user_id] === today() ? '<button class="btn wide" disabled>Ya le has dado caña hoy</button>'
@@ -1156,7 +1160,7 @@ function viewFeedItem(f) {
 }
 function viewFeed(limit) {
   if (!cloud.user || ui.feedState === 'missing' || ui.feedState === 'error') return '';
-  const list = (ui.feed || []).slice(0, limit || 40);
+  const list = (ui.feed || []).filter(f => isRival(f.user_id)).slice(0, limit || 40);
   return html`<section class="feed"><div class="edit-row spread"><h2 class="sec-t">${limit ? 'Lo último' : 'Actividad'}</h2>${limit && (ui.feed || []).length > limit ? '<button class="btn ghost" data-act="open" data-id="ranking">Ver todo</button>' : ''}</div>
     ${list.length ? `<ul class="fl">${list.map(viewFeedItem).join('')}</ul>` : `<p class="hint">${ui.feed ? 'Aún no hay nada. Supera un nivel, entrena o abre un cofre y saldrá aquí para los demás.' : 'Cargando…'}</p>`}</section>`;
 }
@@ -1177,14 +1181,19 @@ function viewRanking() {
   else if (ui.rankingState === 'error') body = '<p class="hint">No se ha podido cargar el ranking. Revisa la conexión.</p>';
   else if (!ui.ranking) body = '<p class="hint">Cargando ranking…</p>';
   else {
-    const rows = rankedPlayers(tab);
+    const rows = rankedPlayers(tab), others = rankedPlayers(tab, true).filter(r => !r.me);
+    const picker = others.length ? html`<section class="panel rivals"><h3>Tus rivales <span class="label">${S.rivals.length ? S.rivals.length + (S.rivals.length === 1 ? ' elegido' : ' elegidos') : 'compites con todos'}</span></h3>
+      <p class="hint">Elige con quién quieres competir. Solo verás a esa gente en el ranking, la plaza y el muro, y solo te llegarán sus avisos. Sin elegir a nadie, compites con todos.</p>
+      <div class="chips">${others.map(o => `<button class="chip-btn" data-act="toggleRival" data-id="${esc(o.user_id)}" aria-pressed="${S.rivals.includes(o.user_id)}">${avatar(o)}${esc(o.name)}</button>`).join('')}</div>
+      ${when(S.rivals.length, `<div class="seg-tabs small" role="tablist"><button role="tab" data-act="rivalsOnly" data-k="1" aria-selected="${S.rivalsOnly}">Solo mis rivales</button><button role="tab" data-act="rivalsOnly" data-k="0" aria-selected="${!S.rivalsOnly}">Ver a todos</button></div>`)}</section>` : '';
+    ui.rivalsPicker = picker;
     body = html`<ol class="ranking">${rows.map((r, i) => {
       const value = tab === 'week' ? r.week_xp : r.xp;
       return `<li class="${r.me ? 'me' : ''} ${i < 3 ? 'top top' + (i + 1) : ''}"><button class="rank-row" data-act="openPlayer" data-id="${esc(r.user_id)}"><span class="pos num">${i + 1}</span>${avatar(r)}
         <span class="who"><b>${esc(r.name)}${r.me ? ' <em>tú</em>' : ''}</b><small class="num">Nivel ${r.level} · racha ${r.streak} ${r.streak === 1 ? 'día' : 'días'}${tab === 'week' ? ` · ${r.chests_week} ${r.chests_week === 1 ? 'cofre' : 'cofres'}` : ''}</small></span>
         <span class="score num">${value}<small>XP</small></span></button></li>`;
     })}</ol>${when(rows.length < 2, '<p class="hint">De momento estás tú solo. Dale a Invitar y pásale el enlace a quien quieras retar.</p>')}`;
-    return head + viewPlaza(rows) + `<p class="hint center">Toca a alguien para ver su perfil.</p><section class="panel">${body}</section>` + viewFeed();
+    return head + viewPlaza(rows) + `<p class="hint center">Toca a alguien para ver su perfil.</p><section class="panel">${body}</section>` + ui.rivalsPicker + viewFeed();
   }
   return head + `<section class="panel">${body}</section>`;
 }
@@ -1952,6 +1961,11 @@ const actions = {
     const { error } = await cloud.client.from('vouchers').update({ status: 'declined' }).eq('id', v.id);
     if (error) toast('No se pudo'); else loadVouchers();
   },
+  toggleRival: el => {
+    const id = el.dataset.id;
+    update(s => { s.rivals = s.rivals.includes(id) ? s.rivals.filter(x => x !== id) : [...s.rivals, id]; if (s.rivals.length) s.rivalsOnly = true; }, { reward: false });
+  },
+  rivalsOnly: el => update(s => { s.rivalsOnly = el.dataset.k === '1'; }, { reward: false }),
   buyShield: () => {
     if (S.shields >= SHIELD_MAX || coins() < SHIELD_COST) return;
     if (ui.armed !== 'buy:shield') { ui.armed = 'buy:shield'; render(); return; }

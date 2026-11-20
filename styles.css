@@ -861,3 +861,11 @@ button.pr svg{width:13px;height:13px}
 .v-h{display:flex;justify-content:space-between;gap:8px}
 .v-h small{font-size:12px;font-weight:700;opacity:.75}
 .vouchers{display:flex;flex-direction:column;gap:10px}
+
+/* Rivales */
+.rivals .chip-btn{display:inline-flex;align-items:center;gap:6px;padding:4px 12px 4px 4px}
+.rivals .chip-btn .ava{width:26px;height:26px;font-size:12px;border-width:1.5px}
+.rivals .seg-tabs{align-self:flex-start;background:var(--bg);border:1px solid var(--hairline)}
+.rivals .seg-tabs button{color:var(--muted)}
+.rivals .seg-tabs button[aria-selected="true"]{background:var(--ink);color:var(--on-ink)}
+.rival-btn{margin-top:2px}
