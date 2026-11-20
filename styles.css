@@ -953,3 +953,14 @@ button.day:disabled:not(.future){opacity:.5}
 .week-hint{margin:-2px 0 0}
 .day.today:not(.sel) .d{color:var(--muted);opacity:1}
 .tpl:disabled{opacity:.5}
+
+/* Rutinas rápidas: pestañas con ✕ para borrar */
+.rchips{display:flex;flex-wrap:wrap;gap:6px}
+.rchip{display:inline-flex;align-items:center;border:2px solid var(--soft-line);border-radius:999px;background:var(--bg);overflow:hidden;transition:background .2s, border-color .2s}
+.rchip .rn{border:0;background:none;padding:7px 4px 7px 13px;font-weight:700;font-size:13.5px;color:inherit}
+.rchip .rx{border:0;background:none;padding:7px 11px 7px 6px;font-size:12px;font-weight:800;color:var(--muted)}
+.rchip.on{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
+.rchip.on .rx{color:color-mix(in srgb, var(--on-ink) 60%, transparent)}
+.rchip.armed{border-color:var(--red)}
+.rchip.armed .rx{background:var(--red);color:#fff;padding-left:10px}
+button.rchip.add{padding:7px 14px;font-weight:700;font-size:13.5px;border-style:dashed;color:var(--ink)}
