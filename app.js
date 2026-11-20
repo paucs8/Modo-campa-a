@@ -195,6 +195,10 @@ const TEMPLATES = [
     level('Chef', [mission('Preparar comida para toda la semana (táper)', 60), mission('Cocinar un plato de otro país', 40)]),
     level('Jefe final', [mission('Hacer una cena para amigos', 200)]) ] },
 ];
+/** Campañas con un check de "¿lo has hecho hoy?" que suma un día a sus contadores de días. */
+const DAY_CHECKS = { leer: { q: '¿Has leído hoy?', past: '¿Leíste', yes: 'Hoy has leído', match: /^Días leyendo/i, emoji: '📖' } };
+const dayCheckOf = c => DAY_CHECKS[c.tpl] || (/^leer más$/i.test(c.name || '') ? DAY_CHECKS.leer : null);
+const dayCheckStreak = c => { const set = new Set(c.checkDays || []); let d = set.has(today()) ? today() : addDays(today(), -1), n = 0; while (set.has(d)) { n++; d = addDays(d, -1); } return n; };
 const fromTemplate = t => ({ id: uid(), tpl: t.key, name: t.name, icon: t.icon, color: t.color, sub: t.sub, levels: t.levels() });
 function defaultRoutines() {
   return [
@@ -687,11 +691,13 @@ function useShields() {
 const DUEL_METRIC = { xp: { name: 'Más XP', desc: 'más XP', unit: 'XP' }, entrenos: { name: 'Más días entrenados', desc: 'más días entrenados', unit: 'entrenos' } };
 const DUEL_STAKES = [0, 50, 100, 200];
 const addDays = (key, n) => { const d = new Date(key + 'T12:00'); d.setDate(d.getDate() + n); return dateKey(d); };
+/** Los duelos van de lunes a domingo y siempre empiezan la semana siguiente, para que nadie salga con ventaja. */
+const nextMonday = () => addDays(mondayKey(), 7);
 const iAmChallenger = d => cloud.user && d.challenger === cloud.user.id;
 const duelRival = d => (iAmChallenger(d) ? { id: d.opponent, name: d.opponent_name } : { id: d.challenger, name: d.challenger_name });
 /** Mi marcador en un duelo: lo que he sumado entre el día de inicio y el de fin. */
 function myDuelScore(d) {
-  if (!d.start_day) return 0;
+  if (!d.start_day || today() < d.start_day) return 0;
   const end = d.end_day, now = today(), until = now < end ? null : end;
   if (d.metric === 'entrenos') return S.train.filter(k => k >= d.start_day && k < end).length;
   const base = S.duelBase[d.id] != null ? S.duelBase[d.id] : xpBefore(d.start_day);
@@ -719,7 +725,7 @@ function syncDuels() {
   ui.duels.forEach(d => {
     if (d.status !== 'active' && d.status !== 'finished') return;
     // Punto de partida de mi XP: lo que tenía al empezar el duelo (si lo veo el mismo día, lo que tengo ahora)
-    if (d.metric === 'xp' && d.start_day && S.duelBase[d.id] == null) { S.duelBase[d.id] = today() === d.start_day ? totalXP() : xpBefore(d.start_day); persist(); }
+    if (d.metric === 'xp' && d.start_day && today() >= d.start_day && S.duelBase[d.id] == null) { S.duelBase[d.id] = today() === d.start_day ? totalXP() : xpBefore(d.start_day); persist(); }
     const field = iAmChallenger(d) ? 'challenger_score' : 'opponent_score', mine = myDuelScore(d);
     if (d.status === 'active' && d[field] !== mine) { d[field] = mine; cloud.client.from('duels').update({ [field]: mine }).eq('id', d.id).then(() => {}); }
     if (today() >= d.end_day && !S.duelsSettled[d.id]) {
@@ -1361,9 +1367,13 @@ function viewDuelCard(d) {
   if (d.status === 'pending') {
     const incoming = !iAmChallenger(d);
     return html`<li class="duel pending"><div class="duel-h"><span class="pill">⚔️ ${incoming ? 'Te han retado' : 'Reto enviado'}</span><small>${stake}</small></div>
-      <p><b>${esc(incoming ? rival.name : 'Tú')}</b> ${incoming ? 'te reta' : `has retado a <b>${esc(rival.name)}</b>`} a una semana de <b>${meta.desc}</b>.</p>
+      <p><b>${esc(incoming ? rival.name : 'Tú')}</b> ${incoming ? 'te reta' : `has retado a <b>${esc(rival.name)}</b>`} a una semana de <b>${meta.desc}</b>. Si acepta, empieza el lunes ${shortDate(nextMonday())}.</p>
       <div class="edit-row">${incoming ? `<button class="btn primary" data-act="acceptDuel" data-id="${d.id}">Aceptar</button><button class="btn ghost" data-act="declineDuel" data-id="${d.id}">Rechazar</button>`
         : `<small class="hint">Esperando a que acepte…</small><button class="btn ghost" data-act="declineDuel" data-id="${d.id}">Cancelar</button>`}</div></li>`;
+  }
+  if (today() < d.start_day) {
+    return html`<li class="duel soon"><div class="duel-h"><span class="pill">⚔️ ${meta.name}</span><small>Empieza el lunes ${shortDate(d.start_day)}</small></div>
+      <p>Contra <b>${esc(rival.name)}</b>, de lunes a domingo. Lo que hagáis antes no cuenta.</p><small class="hint">${stake}</small></li>`;
   }
   const { mine, theirs } = duelScores(d), max = Math.max(1, mine, theirs), over = today() >= d.end_day;
   const left = Math.max(0, Math.round((new Date(d.end_day + 'T00:00') - Date.now()) / 86400000));
@@ -1413,7 +1423,7 @@ function viewDuelForm(r) {
   const open = (ui.duels || []).find(d => (d.challenger === r.user_id || d.opponent === r.user_id) && (d.status === 'pending' || d.status === 'active'));
   if (open) return `<ul class="duel-list">${viewDuelCard(open)}</ul>`;
   const f = ui.duelForm, have = coins();
-  return html`<section class="panel duel-form"><h3>Retar a un duelo</h3><p class="hint">Una semana a ver quién gana. Empieza cuando acepte.</p>
+  return html`<section class="panel duel-form"><h3>Retar a un duelo</h3><p class="hint">Una semana entera, de lunes a domingo. Empieza el lunes ${shortDate(nextMonday())} si acepta.</p>
     <div class="chips">${Object.entries(DUEL_METRIC).map(([k, m]) => `<button class="chip-btn" data-act="duelMetric" data-k="${k}" aria-pressed="${f.metric === k}">${m.name}</button>`).join('')}</div>
     <span class="label">Apuesta</span><div class="chips">${DUEL_STAKES.map(v => `<button class="chip-btn" data-act="duelStake" data-k="${v}" aria-pressed="${f.stake === v}" ${v > have ? 'disabled' : ''}>${v ? v + ' monedas' : 'Nada'}</button>`).join('')}</div>
     <button class="btn primary wide" data-act="challenge" data-id="${esc(r.user_id)}">⚔️ Retar a ${esc(r.name)}</button></section>`;
@@ -2003,6 +2013,12 @@ function viewShop() {
     ${when(recent.length, html`<section class="panel"><h3>Canjeado</h3><ul class="hist">${recent.map(p =>
       `<li><b>${esc(p.name)}</b><span class="num">${shortDate(p.d)} · ${p.cost}</span>${when(ui.editing, confirmBtn('deletePurchase', p.id, 'Devolver'))}</li>`)}</ul></section>`)}`;
 }
+function viewDayCheck(c) {
+  const cfg = dayCheckOf(c); if (!cfg) return '';
+  const date = logDate(), ok = (c.checkDays || []).includes(date), st = dayCheckStreak(c);
+  const title = ui.logDay ? `${cfg.past} ${dayWord(ui.logDay)}?` : ok ? cfg.yes : cfg.q;
+  return html`<section class="day-check"><ul class="quests"><li><button class="quest di ${ok ? 'done' : ''}" data-act="dayCheck" data-id="${c.id}"><span class="check">${ok ? GLYPH.check : `<span class="di-e">${cfg.emoji}</span>`}</span><span class="txt"><b>${esc(title)}</b><small>${st > 1 ? `🔥 ${st} días seguidos` : ok ? 'Suma un día a tus misiones de días leyendo' : 'Márcalo y suma un día a tus misiones de días leyendo'}</small></span></button></li></ul></section>`;
+}
 function viewCampaign(c) {
   const p = campaignProgress(c), inSession = c.tracker === 'body' && sessionOpen();
   if (inSession) return viewSession();
@@ -2012,7 +2028,7 @@ function viewCampaign(c) {
     <div class="row"><span class="big num">${pct(p)}%</span>
       <div class="edit-row">${when(ui.editing && S.campaigns.length > 1, `<button class="btn danger on-color" data-act="deleteCampaign">${ui.armed === c.id ? '¿Borrar campaña?' : 'Borrar'}</button>`)}<button class="btn dark" data-act="toggleEditing">${ui.editing ? 'Listo' : 'Editar'}</button></div></div>
     ${bar(p)}</section>
-    ${when(!inSession, viewBoss(c))}${when(c.tracker === 'body', viewBody())}${when(!inSession, viewMap(c))}`;
+    ${viewDayCheck(c)}${when(!inSession, viewBoss(c))}${when(c.tracker === 'body', viewBody())}${when(!inSession, viewMap(c))}`;
 }
 
 function render() {
@@ -2397,16 +2413,16 @@ const actions = {
     const { error } = await cloud.client.from('duels').insert({ challenger: cloud.user.id, opponent: r.user_id, challenger_name: S.name, opponent_name: r.name, metric: f.metric, stake: f.stake });
     if (error) { toast(missingTable(error) ? 'Falta activar los duelos en Supabase' : 'No se pudo enviar el reto'); el.disabled = false; return; }
     toast(`⚔️ Reto enviado a ${r.name}`); loadDuels();
-    notify(r.user_id, 'duel', `⚔️ ${S.name} te reta a un duelo`, `Una semana de ${DUEL_METRIC[f.metric].desc}${f.stake ? ` con ${f.stake} monedas en juego` : ''}. ¿Aceptas?`);
+    notify(r.user_id, 'duel', `⚔️ ${S.name} te reta a un duelo`, `La semana del lunes ${shortDate(nextMonday())}, a ${DUEL_METRIC[f.metric].desc}${f.stake ? ` con ${f.stake} monedas en juego` : ''}. ¿Aceptas?`);
   },
   acceptDuel: async el => {
     const d = (ui.duels || []).find(x => String(x.id) === el.dataset.id); if (!d) return;
     if (coins() < d.stake) { toast(`Necesitas ${d.stake} monedas para aceptar`); return; }
-    const start = today(), patch = { status: 'active', start_day: start, end_day: addDays(start, 7), challenger_score: 0, opponent_score: 0 };
+    const start = nextMonday(), patch = { status: 'active', start_day: start, end_day: addDays(start, 7), challenger_score: 0, opponent_score: 0 };
     const { error } = await cloud.client.from('duels').update(patch).eq('id', d.id);
     if (error) { toast('No se pudo aceptar'); return; }
-    Object.assign(d, patch); toast('⚔️ ¡Duelo aceptado! Tenéis 7 días'); syncDuels(); render();
-    notify(d.challenger, 'duel', `⚔️ ${S.name} ha aceptado tu duelo`, 'Tenéis 7 días. ¡Que empiece!');
+    Object.assign(d, patch); toast(`⚔️ ¡Duelo aceptado! Empieza el lunes ${shortDate(start)}`); syncDuels(); render();
+    notify(d.challenger, 'duel', `⚔️ ${S.name} ha aceptado tu duelo`, `Empieza el lunes ${shortDate(start)} y dura toda la semana.`);
   },
   declineDuel: async el => {
     const d = (ui.duels || []).find(x => String(x.id) === el.dataset.id); if (!d) return;
@@ -2438,6 +2454,25 @@ const actions = {
     ui.dailyForm = null;
     update(s => { s.dailyItems.push(item); }, { reward: false });
     toast(item.hour != null ? `Añadido. ${avisos.endpoint ? `Te avisaré a las ${item.hour}:00 si no lo has marcado` : 'Activa los avisos en tu perfil para que te recuerde'}` : 'Añadido a «Cada día»');
+  },
+  dayCheck: el => {
+    const c = findCampaign(el.dataset.id), cfg = c && dayCheckOf(c); if (!cfg) return;
+    const before = boss(c);
+    update(s => {
+      const date = logDate(), days = (c.checkDays = c.checkDays || []), on = !days.includes(date);
+      const bumps = (c.checkBumps = c.checkBumps || {}), all = c.levels.flatMap(l => l.missions);
+      if (on) {
+        days.push(date);
+        bumps[date] = all.filter(m => m.type === 'count' && cfg.match.test(m.name) && m.count < m.target).map(m => { m.count++; logActivity(s, c.id, 1); if (m.count >= m.target) m.doneAt = Date.now(); return m.id; });
+      } else {
+        // Al desmarcar se deshace solo lo que sumó ese check
+        days.splice(days.indexOf(date), 1);
+        (bumps[date] || []).forEach(id => { const m = all.find(x => x.id === id); if (m && m.count > 0) { m.count--; logActivity(s, c.id, -1); } });
+        delete bumps[date];
+      }
+    });
+    const after = boss(c);
+    if (before && after && !after.defeated && after.hp < before.hp - 0.001) setTimeout(() => toast(`−${Math.round((before.hp - after.hp) * 100)} HP al jefe`), 900);
   },
   dailyToggle: el => update(s => { const d = logDate(), list = (s.dailyDone[d] = s.dailyDone[d] || []), i = list.indexOf(el.dataset.id); if (i >= 0) list.splice(i, 1); else list.push(el.dataset.id); if (!list.length) delete s.dailyDone[d]; }),
   dailyEdit: () => { ui.dailyEdit = !ui.dailyEdit; ui.dailyForm = null; render(); },
@@ -2665,6 +2700,8 @@ function mergeProgress(cur, inc) {
         if (m.type === 'count') m.count = Math.max(m.count || 0, im.count || 0);
       });
     });
+    if (ic.checkDays) c.checkDays = [...new Set([...(c.checkDays || []), ...ic.checkDays])].sort();
+    if (ic.checkBumps) c.checkBumps = Object.assign({}, ic.checkBumps, c.checkBumps || {});
   });
   return cur;
 }
@@ -2753,7 +2790,7 @@ document.addEventListener('click', ev => {
   if (!el) return;
   const name = el.dataset.act;
   // Los botones de dos toques (borrar, comprar, canjear) guardan su confirmación
-  if (!name.startsWith('delete') && !name.startsWith('buy') && name !== 'discardSession') ui.armed = null;
+  if (!/delete/i.test(name) && !name.startsWith('buy') && name !== 'discardSession') ui.armed = null;
   if (actions[name]) actions[name](el, ev);
 });
 document.addEventListener('keydown', ev => {

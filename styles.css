@@ -1014,3 +1014,7 @@ button.rchip.add{padding:7px 14px;font-weight:700;font-size:13.5px;border-style:
 .emoji-row{display:flex;flex-wrap:wrap;gap:4px}
 .emoji-row button{width:38px;height:38px;border-radius:12px;border:2px solid transparent;background:var(--bg);font-size:19px}
 .emoji-row button[aria-pressed="true"]{border-color:var(--ink)}
+.duel.soon{background:linear-gradient(140deg,#1f2a3a,#141414)}
+.duel.soon p{margin:0;font-size:14px}
+.day-check{margin:0}
+.day-check .quest.done .txt b{text-decoration:none;opacity:1}
