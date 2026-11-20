@@ -46,6 +46,7 @@ const GLYPH = {
   stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
   next: svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
   prev: svg('<path d="M19 12H5M11 6l-6 6 6 6"/>'),
+  chart: svg('<path d="M4 19h16"/><path d="m5 15 4-4 3 3 6-7"/>'),
   bag: svg('<path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>'),
   star: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1.5 14.2 9.8 22.5 12 14.2 14.2 12 22.5 9.8 14.2 1.5 12 9.8 9.8z"/></svg>',
 };
@@ -1085,7 +1086,7 @@ function viewRoutine(r) {
     <ul class="exl">${r.exercises.map(x => {
       if (formOpenFor(r.id, x.id) && !ui.exForm.inSession) return `<li class="formli">${viewExerciseForm(r, x, false)}</li>`;
       const best = exerciseStats(x.id).best;
-      return `<li><button class="exname" data-act="editExercise" data-r="${r.id}" data-id="${x.id}" aria-label="Editar ${esc(x.name)}">${esc(x.name)} <small>${scheme(x)}</small></button>${best ? `<span class="pr">Récord ${esc(setText(best))}</span>` : '<small>Sin datos</small>'}</li>`;
+      return `<li><button class="exname" data-act="editExercise" data-r="${r.id}" data-id="${x.id}" aria-label="Editar ${esc(x.name)}">${esc(x.name)} <small>${scheme(x)}</small></button>${best ? `<button class="pr" data-act="openStats" data-id="${x.id}" aria-label="Ver progreso de ${esc(x.name)}">${GLYPH.chart}${esc(setText(best))}</button>` : '<small>Sin datos</small>'}</li>`;
     })}${when(!r.exercises.length, '<li><small>Sin ejercicios todavía</small></li>')}</ul>
     ${formOpenFor(r.id) && !ui.exForm.inSession ? viewExerciseForm(r, null, false) : `<button class="btn add-ex" data-act="newExercise" data-r="${r.id}">+ Ejercicio</button>`}</div>`;
 }
@@ -1103,6 +1104,50 @@ function viewRoutines() {
 function setInput(x, i, field, value, placeholder, label, mode = 'decimal') {
   return `<input inputmode="${mode}" data-x="${x}" data-i="${i}" data-f="${field}" value="${esc(value ?? '')}" placeholder="${placeholder}" aria-label="${label}">`;
 }
+// ---------- Progreso de un ejercicio: gráfica y sesiones ----------
+const METRIC = {
+  peso: { label: 'Kilos máximos', unit: 'kg', of: sets => Math.max(...sets.map(st => +st.kg || 0)) },
+  reps: { label: 'Repes máximas en una serie', unit: 'repes', of: sets => Math.max(...sets.map(st => +st.r || 0)) },
+  seg: { label: 'Mejor tiempo', unit: 's', of: sets => Math.max(...sets.map(st => +st.t || 0)) },
+  min: { label: 'Mejor tiempo', unit: 'min', of: sets => Math.max(...sets.map(st => +st.t || 0)) },
+  run: { label: 'Distancia', unit: 'km', of: sets => Math.max(...sets.map(st => +st.km || 0)) },
+};
+const findExercise = id => { for (const r of S.routines) { const x = r.exercises.find(e => e.id === id); if (x) return x; } return null; };
+function viewChart(points, unit) {
+  if (points.length < 2) return `<div class="chart-empty">${points.length ? 'Con una sesión más ya verás la línea.' : 'Aún no hay sesiones de este ejercicio.'}</div>`;
+  const W = 320, H = 150, P = 14, vals = points.map(p => p.v), lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
+  const xy = points.map((p, i) => [P + i * (W - 2 * P) / (points.length - 1), H - P - (p.v - lo) / span * (H - 2 * P - 16)]);
+  const line = xy.map((q, i) => `${i ? 'L' : 'M'}${q[0].toFixed(1)} ${q[1].toFixed(1)}`).join(' ');
+  let best = -Infinity;
+  const dots = xy.map((q, i) => { const pr = points[i].v > best; best = Math.max(best, points[i].v); return `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="${pr && i ? 5 : 3.5}" class="${pr && i ? 'pr' : ''}"/>`; }).join('');
+  const last = xy[xy.length - 1];
+  return html`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Evolución de ${fmt(points[0].v)} a ${fmt(points[points.length - 1].v)} ${unit}">
+    <defs><linearGradient id="cg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".55"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+    <line x1="${P}" x2="${W - P}" y1="${H - P}" y2="${H - P}" class="axis"/>
+    <path d="${line} L${last[0].toFixed(1)} ${H - P} L${P} ${H - P} Z" fill="url(#cg)"/>
+    <path d="${line}" class="ln"/>${dots}
+    <text x="${P}" y="12" class="lbl">${fmt(hi)} ${unit}</text><text x="${P}" y="${H - P - 4}" class="lbl">${fmt(lo)}</text>
+    <text x="${last[0].toFixed(1)}" y="${Math.max(12, last[1] - 10).toFixed(1)}" text-anchor="end" class="val">${fmt(points[points.length - 1].v)}</text></svg>`;
+}
+function viewExerciseStats() {
+  const x = findExercise(ui.exStats);
+  if (!x) return '';
+  const M = METRIC[x.kind] || METRIC.reps, list = S.sessions.filter(se => se.ex[x.id] && se.ex[x.id].length);
+  const points = list.map(se => ({ d: se.d, v: M.of(se.ex[x.id]) }));
+  const st = exerciseStats(x.id), first = points[0], last = points[points.length - 1];
+  const diff = first && last ? last.v - first.v : 0;
+  const volume = x.kind === 'peso' ? list.reduce((a, se) => a + se.ex[x.id].reduce((b, set) => b + (+set.kg || 0) * (+set.r || 0), 0), 0) : 0;
+  const day = d => new Date(d + 'T12:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+  return html`<div class="sheet-bg" data-act="closeStats"></div><section class="sheet" role="dialog" aria-label="Progreso de ${esc(x.name)}">
+    <div class="sheet-grip"></div>
+    <div class="edit-row spread"><div><span class="label">${M.label}</span><h3>${esc(x.name)}</h3></div><button class="btn ghost" data-act="closeStats">Cerrar</button></div>
+    ${viewChart(points, M.unit)}
+    <div class="trio"><div class="stat"><b class="num">${st.best ? esc(setText(st.best)) : '–'}</b><small>Récord</small></div>
+      <div class="stat"><b class="num ${diff > 0 ? 'up' : ''}">${first ? (diff > 0 ? '+' : '') + fmt(diff) + ' ' + M.unit : '–'}</b><small>Desde el principio</small></div>
+      <div class="stat"><b class="num">${x.kind === 'peso' && volume ? fmt(volume) + ' kg' : list.length}</b><small>${x.kind === 'peso' && volume ? 'Kilos movidos' : 'Sesiones'}</small></div></div>
+    ${list.length ? html`<h4>Últimas sesiones</h4><ul class="hist">${list.slice(-8).reverse().map(se => `<li><span>${day(se.d)}</span><b>${esc(se.ex[x.id].map(setText).join(' · '))}</b></li>`)}</ul>` : ''}</section>`;
+}
+
 // ---------- Modo entrenamiento: un ejercicio cada vez, series con botones grandes, descanso y cronómetro ----------
 const STEP = { r: 1, kg: 2.5, km: 0.5, t: 5 };
 const mmss = sec => { sec = Math.max(0, Math.round(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
@@ -1141,7 +1186,7 @@ function viewSession() {
     const st = exerciseStats(x.id), next = nextSession(x), rows = d.ex[x.id] || (d.ex[x.id] = []);
     const best = st.best ? setScore(st.best) : null;
     card = html`<div class="ws-card"><div class="ws-h"><span class="label">Ejercicio ${d.cur + 1} de ${xs.length}</span><h3>${esc(x.name)}</h3>
-        <small>${scheme(x)}${st.last ? ' · la última vez: ' + esc(st.last.sets.map(setText).join(', ')) : ''}</small></div>
+        <small>${scheme(x)}${st.last ? ' · la última vez: ' + esc(st.last.sets.map(setText).join(', ')) : ''}</small>${when(st.last, `<button class="link-btn" data-act="openStats" data-id="${x.id}">${GLYPH.chart} Ver progreso</button>`)}</div>
       <div class="ws-tips"><span class="sug ${next.levelUp ? '' : 'keep'}">${esc(next.tip)}</span>${st.best ? `<span class="best">${GLYPH.trophy} Récord: ${esc(setText(st.best))}</span>` : ''}</div>
       <div class="wsets">${rows.map((row, i) => viewSetRow(x, row, i, best))}</div>
       <div class="edit-row"><button class="btn" data-act="addSet" data-x="${x.id}">+ Serie</button>${when(rows.length > 1, `<button class="btn ghost" data-act="removeSet" data-x="${x.id}">− Serie</button>`)}</div>
@@ -1332,7 +1377,7 @@ function render() {
   }
   nav.hidden = false;
   const main = campaign ? viewCampaign(campaign) : ui.view === 'shop' ? viewShop() : ui.view === 'ranking' ? viewRanking() : ui.view === 'profile' ? viewProfile() : ui.view === 'player' ? viewPlayer() : ui.view === 'ideas' ? viewIdeas() : viewHome();
-  document.getElementById('app').innerHTML = viewTop() + viewAccount() + main
+  document.getElementById('app').innerHTML = viewTop() + viewAccount() + main + (ui.exStats ? viewExerciseStats() : '')
     + `<datalist id="ex-list">${COMMON_EXERCISES.map(n => `<option value="${n}">`).join('')}</datalist>`;
   nav.innerHTML = viewNav();
   enhance();
@@ -1622,6 +1667,8 @@ const actions = {
     rows.push(rows.length ? Object.assign({}, rows[rows.length - 1], { done: false }) : blankSet(x));
     saveDraft(); render();
   },
+  openStats: el => { ui.exStats = el.dataset.id; render(); },
+  closeStats: () => { const sh = document.querySelector('.sheet'); if (sh) { sh.classList.add('out'); document.querySelector('.sheet-bg').classList.add('out'); setTimeout(() => { ui.exStats = null; render(); }, 220); } else { ui.exStats = null; render(); } },
   wsGo: el => { const k = +el.dataset.k, n = sessionRoutine().exercises.length; if (k < 0 || k >= n) return; ui.draft.cur = k; saveDraft(); render(); const t = document.querySelector('.ws-tabs .on'); if (t) t.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); const c = document.querySelector('.ws-card'); if (c) { c.classList.add('swap'); c.scrollIntoView({ block: 'start', behavior: 'smooth' }); } },
   wsStep: el => {
     const row = ui.draft.ex[el.dataset.x][+el.dataset.i], f = el.dataset.f, d = num(el.dataset.d);
