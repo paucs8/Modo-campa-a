@@ -990,12 +990,12 @@ function viewTop() {
 }
 function viewAccount() {
   if (!ui.account) return '';
-  if (ui.sync === 'off') return html`<section class="panel"><h3>Sincronización</h3><p class="hint">Falta configurar Supabase. Mientras tanto, todo se guarda en este dispositivo.</p></section>`;
-  if (cloud.user) return html`<section class="panel"><h3>Tu cuenta <button class="btn ghost" data-act="toggleAccount">Cerrar</button></h3>
+  if (ui.sync === 'off') return html`<section class="panel nofold"><h3>Sincronización</h3><p class="hint">Falta configurar Supabase. Mientras tanto, todo se guarda en este dispositivo.</p></section>`;
+  if (cloud.user) return html`<section class="panel nofold"><h3>Tu cuenta <button class="btn ghost" data-act="toggleAccount">Cerrar</button></h3>
     <p class="hint">Conectado como <b>${esc(cloud.user.email || '')}</b>. ${SYNC_LABEL[ui.sync]}.</p>
     <button class="btn" data-act="open" data-id="profile">Editar perfil y personaje</button>
     <div class="edit-row"><button class="btn" data-act="syncNow">Sincronizar ahora</button><button class="btn danger" data-act="signOut">Cerrar sesión</button></div></section>`;
-  return html`<section class="panel"><h3>Tu cuenta <button class="btn ghost" data-act="toggleAccount">Cerrar</button></h3>
+  return html`<section class="panel nofold"><h3>Tu cuenta <button class="btn ghost" data-act="toggleAccount">Cerrar</button></h3>
     <p class="hint">Sirve para guardar tu progreso, usarlo en el móvil y en el PC, y competir en el ranking.</p>
     <form class="stack-s" data-form="signIn">
       <label class="fld"><span>Email</span><input name="email" type="email" autocomplete="email" required></label>
@@ -1804,7 +1804,7 @@ function render() {
 
 // ---------- Detalles visuales tras pintar: paneles plegables, animaciones de entrada y de "hecho" ----------
 const FOLD_KEY = 'modo-campana-plegados';
-const FOLD_CLOSED = ['Cuenta', 'Tu cuenta', 'Sincronización', 'Canjeado'];   // empiezan cerrados
+const FOLD_CLOSED = ['Canjeado'];   // empiezan cerrados
 const NO_FOLD = ['Nueva campaña', 'Mandar una idea', 'Para Claude'];
 let folds = {}; try { folds = JSON.parse(localStorage.getItem(FOLD_KEY) || '{}'); } catch { folds = {}; }
 const fx = { view: null, done: null, counts: {} };
