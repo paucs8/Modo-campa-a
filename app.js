@@ -683,7 +683,7 @@ function settleVouchers() {
 /* ---------- Avisos al móvil (push): recordatorio diario y avisos de amigos ---------- */
 const PUSH_KEY = 'modo-campana-avisos';   // de este dispositivo, no se sincroniza
 const PUSH_KINDS = { reminder: 'Recordatorio diario', nudge: 'Cuando te dan caña', overtake: 'Cuando te pasan en la liga', duel: 'Duelos', invite: 'Invitaciones', react: 'Reacciones a tus logros' };
-let avisos = { endpoint: null, hour: 20, kinds: Object.keys(PUSH_KINDS) };
+let avisos = { endpoint: null, hour: 20, hour2: 13, kinds: Object.keys(PUSH_KINDS) };
 try { avisos = Object.assign(avisos, JSON.parse(localStorage.getItem(PUSH_KEY) || '{}')); } catch (e) { /* sin almacenamiento */ }
 const savePushLocal = () => { try { localStorage.setItem(PUSH_KEY, JSON.stringify(avisos)); } catch (e) { /* sin almacenamiento */ } };
 const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && !!CONFIG.vapidPublicKey;
@@ -692,7 +692,7 @@ const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
 const b64ToBytes = b64 => { const s = atob((b64 + '='.repeat((4 - b64.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(s, ch => ch.charCodeAt(0)); };
 const allDailyDone = () => dailyQuests().every(q => questDone(q));
 function pushRow() {
-  return { endpoint: avisos.endpoint, user_id: cloud.user.id, hour: avisos.hour, kinds: avisos.kinds, rivals: S.rivals, done_day: allDailyDone() ? today() : null, updated_at: new Date().toISOString() };
+  return { endpoint: avisos.endpoint, user_id: cloud.user.id, hour: avisos.hour, hour2: avisos.hour2 === avisos.hour ? null : avisos.hour2, kinds: avisos.kinds, rivals: S.rivals, done_day: allDailyDone() ? today() : null, updated_at: new Date().toISOString() };
 }
 async function enablePush() {
   if (!cloud.user) { toast('Entra con tu cuenta para activar los avisos'); return; }
@@ -718,7 +718,7 @@ let pushSent = '', pushTimer = null;
 /** Mantiene al día lo que el servidor necesita: si ya has hecho las misiones de hoy, tus rivales y tus preferencias. */
 function pushSync(force) {
   if (!avisos.endpoint || !cloud.user) return;
-  const row = pushRow(), key = JSON.stringify([row.hour, row.kinds, row.rivals, row.done_day]);
+  const row = pushRow(), key = JSON.stringify([row.hour, row.hour2, row.kinds, row.rivals, row.done_day]);
   if (!force && key === pushSent) return;
   pushSent = key;
   cloud.client.from('push_subs').update(row).eq('endpoint', avisos.endpoint).then(() => {});
@@ -1121,9 +1121,10 @@ function viewPushPanel() {
   else if (!pushSupported()) body = '<p class="hint">Este navegador no permite avisos. Prueba desde la app instalada o con Chrome.</p>';
   else if ('Notification' in window && Notification.permission === 'denied') body = '<p class="hint">Has bloqueado los avisos. Actívalos en los ajustes del móvil (Notificaciones → Modo Campaña) y vuelve aquí.</p>';
   else if (!on) body = '<p class="hint">Te aviso si se te olvidan las misiones del día, si te pasan en la liga o si te retan. Tú eliges cuáles.</p><button class="btn primary wide" data-act="pushOn">🔔 Activar avisos en este móvil</button>';
-  else body = html`<label class="fld"><span>Recordatorio diario a las</span><select data-act-change="pushHour">${Array.from({ length: 16 }, (_, i) => i + 8).map(h => `<option value="${h}" ${avisos.hour === h ? 'selected' : ''}>${h}:00</option>`)}</select></label>
+  else body = html`<div class="push-hours"><label class="fld"><span>Primer recordatorio</span><select data-act-change="pushHour2"><option value="" ${avisos.hour2 == null ? 'selected' : ''}>Ninguno</option>${Array.from({ length: 16 }, (_, i) => i + 8).map(h => `<option value="${h}" ${avisos.hour2 === h ? 'selected' : ''}>${h}:00</option>`)}</select></label>
+    <label class="fld"><span>Segundo recordatorio</span><select data-act-change="pushHour">${Array.from({ length: 16 }, (_, i) => i + 8).map(h => `<option value="${h}" ${avisos.hour === h ? 'selected' : ''}>${h}:00</option>`)}</select></label></div>
     <span class="label">Quiero que me avises de</span><div class="chips">${Object.entries(PUSH_KINDS).map(([k, t]) => `<button class="chip-btn" data-act="pushKind" data-k="${k}" aria-pressed="${avisos.kinds.includes(k)}">${t}</button>`).join('')}</div>
-    <p class="hint">El recordatorio solo llega si aún no has hecho las misiones de ese día. ${S.rivals.length ? 'Los avisos de la liga, la caña y las reacciones solo llegan de tus rivales.' : ''}</p>
+    <p class="hint">Como mucho dos al día, y solo si aún no has hecho las misiones de ese día. ${S.rivals.length ? 'Los avisos de la liga, la caña y las reacciones solo llegan de tus rivales.' : ''}</p>
     <div class="edit-row"><button class="btn" data-act="pushTest">Probar aviso</button><button class="btn ghost" data-act="pushOff">Desactivar</button></div>`;
   return html`<section class="panel push-panel"><h3>Avisos <span class="label">${on ? '🔔 activados' : 'desactivados'}</span></h3>${body}</section>`;
 }
@@ -2394,6 +2395,7 @@ document.addEventListener('input', ev => {
   if (row) { row[t.dataset.f] = t.value; saveDraft(); }
 });
 document.addEventListener('change', ev => {
+  if (ev.target.dataset && ev.target.dataset.actChange === 'pushHour2') { avisos.hour2 = ev.target.value === '' ? null : +ev.target.value; savePushLocal(); pushSync(true); toast(avisos.hour2 == null ? 'Solo un recordatorio al día' : `También te recordaré a las ${avisos.hour2}:00`); return; }
   if (ev.target.dataset && ev.target.dataset.actChange === 'pushHour') { avisos.hour = +ev.target.value; savePushLocal(); pushSync(true); toast(`Te recordaré a las ${avisos.hour}:00 si te faltan misiones`); return; }
 });
 document.addEventListener('change', ev => {

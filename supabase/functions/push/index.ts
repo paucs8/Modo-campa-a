@@ -14,7 +14,7 @@ webpush.setVapidDetails('mailto:avisos@modo-campana.app', Deno.env.get('VAPID_PU
 const DIRECT = ['duel', 'invite'];
 const KINDS = ['nudge', 'duel', 'invite', 'react', 'overtake'];
 
-type Sub = { endpoint: string; p256dh: string; auth: string; user_id: string; kinds: string[]; rivals: string[]; hour: number; done_day: string | null };
+type Sub = { endpoint: string; p256dh: string; auth: string; user_id: string; kinds: string[]; rivals: string[]; hour: number; hour2: number | null; done_day: string | null };
 
 async function sendTo(subs: Sub[], payload: Record<string, unknown>) {
   let sent = 0;
@@ -44,7 +44,7 @@ Deno.serve(async req => {
   if (body.cron) {
     if (req.headers.get('x-cron-secret') !== Deno.env.get('CRON_SECRET')) return json({ error: 'no' }, 401);
     const { day, hour } = madrid();
-    const { data: subs } = await admin.from('push_subs').select('*').eq('hour', hour).contains('kinds', ['reminder']);
+    const { data: subs } = await admin.from('push_subs').select('*').or(`hour.eq.${hour},hour2.eq.${hour}`).contains('kinds', ['reminder']);
     const pending = (subs || []).filter((s: Sub) => s.done_day !== day);
     const ids = [...new Set(pending.map((s: Sub) => s.user_id))];
     const { data: profiles } = ids.length ? await admin.from('profiles').select('user_id,name,streak').in('user_id', ids) : { data: [] };

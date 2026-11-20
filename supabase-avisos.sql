@@ -7,6 +7,7 @@ create table if not exists public.push_subs (
   p256dh text not null,
   auth text not null,
   hour int not null default 20 check (hour between 0 and 23),
+  hour2 int default 13 check (hour2 between 0 and 23),
   kinds text[] not null default '{reminder,nudge,duel,invite,react,overtake}',
   rivals uuid[] not null default '{}',
   done_day date,
@@ -29,3 +30,6 @@ create table if not exists public.push_log (
 );
 create index if not exists push_log_from_idx on public.push_log (from_id, created_at);
 alter table public.push_log enable row level security;
+
+-- Segundo recordatorio del día (por si ya habías creado la tabla antes)
+alter table public.push_subs add column if not exists hour2 int default 13 check (hour2 between 0 and 23);

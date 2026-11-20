@@ -888,3 +888,5 @@ button.pr svg{width:13px;height:13px}
 
 /* Avisos */
 .push-panel select{font-size:16px;padding:9px 12px;border-radius:12px;border:2px solid var(--soft-line);background:var(--bg);color:var(--ink)}
+.push-hours{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.push-hours select{width:100%}
