@@ -97,6 +97,9 @@ const fmt = v => (v == null || v === '' ? '–' : (Math.round(v * 10) / 10).toLo
 const num = v => parseFloat(String(v == null ? '' : v).replace(',', '.'));
 const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const today = () => dateKey(new Date());
+/** Día en el que se está apuntando: hoy, o ayer/anteayer si se te olvidó apuntar algo. */
+const logDate = () => { const d = new Date(); d.setDate(d.getDate() - (ui.logDay || 0)); return dateKey(d); };
+const LOG_DAYS = ['Hoy', 'Ayer', 'Anteayer'];
 const shortDate = key => new Date(key + 'T12:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
 const pct = p => Math.round(p * 100);
 const colorVar = c => `var(--${c.color || 'lilac'})`;
@@ -275,7 +278,7 @@ function chestTotals() {
 }
 /** Apunta que hoy se ha avanzado (o deshecho) algo en una campaña: alimenta las diarias y el ánimo. */
 function logActivity(s, cid, delta) {
-  const day = (s.activity[today()] = s.activity[today()] || {});
+  const day = (s.activity[logDate()] = s.activity[logDate()] || {});
   day[cid] = Math.max(0, (day[cid] || 0) + delta);
 }
 
@@ -301,7 +304,7 @@ function questDone(q, date = today()) {
   }
 }
 function questText(q) {
-  if (q.kind === 'train') return { title: 'Entrena hoy', sub: 'Una rutina, correr o comba: lo que te apetezca' };
+  if (q.kind === 'train') return ui.logDay ? { title: 'Entrenar', sub: 'Márcalo si entrenaste ese día' } : { title: 'Entrena hoy', sub: 'Una rutina, correr o comba: lo que te apetezca' };
   if (q.kind === 'weigh') return { title: 'Pésate', sub: 'Apúntalo en Físico' };
   if (q.kind === 'advance') {
     const c = findCampaign(q.cid), l = c && c.levels[currentLevelIndex(c)], next = l && l.missions.find(m => !isDone(m));
@@ -1128,13 +1131,19 @@ function viewHero() {
     <p class="say mood-${m.kind}">${esc(m.line)}</p>
     <div class="hero-stats"><button class="coins-btn" data-act="open" data-id="shop" aria-label="Ir a la tienda">${coinBadge(coins(), 'coins')}</button></div></section>`;
 }
+const viewDaySwitch = () => `<div class="day-switch" role="tablist" aria-label="Día que apuntas">${LOG_DAYS.map((t, i) => `<button role="tab" data-act="logDay" data-k="${i}" aria-selected="${(ui.logDay || 0) === i}">${t}</button>`).join('')}</div>`;
+function viewLogBanner() {
+  if (!ui.logDay) return '';
+  const d = new Date(logDate() + 'T12:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric' });
+  return `<div class="log-banner"><span>✏️ Apuntando para <b>${LOG_DAYS[ui.logDay].toLowerCase()}</b> (${d})</span><button data-act="logDay" data-k="0">Volver a hoy</button></div>`;
+}
 function viewDaily() {
-  const quests = dailyQuests(), done = quests.filter(q => questDone(q)).length, chest = (S.daily[today()] || {}).chest, ready = done === quests.length && !chest;
-  return html`<section class="daily"><div class="edit-row spread"><h2 class="sec-t">Misiones de hoy</h2><span class="label num">${done}/${quests.length}</span></div>
+  const date = logDate(), quests = dailyQuests(date), done = quests.filter(q => questDone(q, date)).length, chest = (S.daily[date] || {}).chest, ready = done === quests.length && !chest;
+  return html`<section class="daily"><div class="edit-row spread"><h2 class="sec-t">Misiones de ${LOG_DAYS[ui.logDay || 0].toLowerCase()}</h2><span class="label num">${done}/${quests.length}</span></div>${viewDaySwitch()}
     <ul class="quests">${quests.map(q => {
-      const ok = questDone(q), t = questText(q);
-      const act = q.kind === 'habit' ? `data-act="toggleHabit" data-k="${q.key}"` : q.kind === 'advance' ? `data-act="open" data-id="${q.cid}"` : 'data-act="open" data-id="fisico"';
-      return `<li><button class="quest ${ok ? 'done' : ''}" data-pk="q-${esc(q.key || q.cid || q.kind)}" ${act}><span class="check">${GLYPH.check}</span><span class="txt"><b>${esc(t.title)}</b><small>${esc(t.sub)}</small></span>${q.kind === 'habit' ? '' : `<span class="go">${GLYPH.chev}</span>`}</button></li>`;
+      const ok = questDone(q, date), t = questText(q);
+      const act = q.kind === 'habit' ? `data-act="toggleHabit" data-k="${q.key}"` : q.kind === 'train' && ui.logDay ? 'data-act="toggleTrainedToday"' : q.kind === 'advance' ? `data-act="open" data-id="${q.cid}"` : 'data-act="open" data-id="fisico"';
+      return `<li><button class="quest ${ok ? 'done' : ''}" data-pk="q-${esc(q.key || q.cid || q.kind)}" ${act}><span class="check">${GLYPH.check}</span><span class="txt"><b>${esc(t.title)}</b><small>${esc(t.sub)}</small></span>${q.kind === 'habit' || (q.kind === 'train' && ui.logDay) ? '' : `<span class="go">${GLYPH.chev}</span>`}</button></li>`;
     })}</ul>
     <div class="chest ${ready ? 'ready' : chest ? 'opened' : ''}"><img src="${chest ? IMG.chestOpen : IMG.chest}" alt="">
       <div class="txt">${chest ? `<b>Cofre abierto</b><small class="num">+${chest.coins} monedas · +${chest.xp} XP${chest.gold ? ' · ¡dorado!' : ''}</small>`
@@ -1204,15 +1213,15 @@ function viewWeight() {
     <div class="trio"><div><b>${fmt(w.start)}</b><span>Inicio kg</span></div><div><b>${fmt(cur)}</b><span>Actual kg</span></div><div><b>${fmt(w.goal)}</b><span>Objetivo kg</span></div></div>
     ${when(hasGoal, bar(p, 'bar2') + `<p class="hint"><b class="num">${pct(p)}%</b> del camino${cur != null ? ' · ' + fmt(Math.max(0, w.start - cur)) + ' kg menos desde el inicio' : ''}</p>`)}
     ${viewWeightChart()}
-    <div class="inrow"><input id="kg" type="number" inputmode="decimal" step="0.1" min="30" max="250" placeholder="Peso de hoy (kg)"><button class="btn primary" data-act="logWeight">Apuntar</button></div>
+    <div class="inrow"><input id="kg" type="number" inputmode="decimal" step="0.1" min="30" max="250" placeholder="Peso de ${LOG_DAYS[ui.logDay || 0].toLowerCase()} (kg)"><button class="btn primary" data-act="logWeight">Apuntar</button></div>
     ${when(w.goal == null || ui.editing, `<div class="inrow"><input id="goal" type="number" inputmode="decimal" step="0.5" min="30" max="250" placeholder="Peso objetivo (kg)" value="${w.goal ?? ''}"><button class="btn" data-act="setGoal">${w.goal == null ? 'Fijar objetivo' : 'Cambiar objetivo'}</button></div>`)}
     <p class="hint">${w.start == null ? 'El primer peso que apuntes queda como peso inicial.' : 'Pésate siempre en las mismas condiciones, por ejemplo al levantarte.'}</p></section>`;
 }
 function viewTraining() {
-  const trainedToday = S.train.includes(today()), week = new Set(weekDays().map(d => d.key));
+  const trainedToday = S.train.includes(logDate()), week = new Set(weekDays().map(d => d.key)), dayName = LOG_DAYS[ui.logDay || 0].toLowerCase();
   return html`<section class="panel"><h3>Entrenos <span class="label">+${XP.train} XP cada uno</span></h3>
     <div class="trio"><div><b>${S.train.length}</b><span>Total</span></div><div><b>${S.train.filter(k => week.has(k)).length}</b><span>Esta semana</span></div><div><b>${streak()}</b><span>Días seguidos</span></div></div>
-    <button class="btn ${trainedToday ? '' : 'primary'} wide" data-act="toggleTrainedToday">${trainedToday ? 'Hoy ya cuenta como entrenado · deshacer' : 'He entrenado hoy'}</button>
+    ${viewDaySwitch()}<button class="btn ${trainedToday ? '' : 'primary'} wide" data-act="toggleTrainedToday">${trainedToday ? `${dayName[0].toUpperCase() + dayName.slice(1)} ya cuenta como entrenado · deshacer` : `He entrenado ${dayName}`}</button>
     <p class="hint">Si guardas una sesión de rutina, el día cuenta solo.</p></section>`;
 }
 // Formulario de ejercicio: crear o editar, con campos según el tipo
@@ -1366,7 +1375,7 @@ function viewSession() {
   }
   const rest = d.rest && d.rest.until > Date.now() ? d.rest : null;
   return html`<section class="ws">
-    <div class="ws-top" ${heroStyle()}><div class="ws-row"><div><span class="label">Entrenando</span><b>${esc(r.name)}</b></div>
+    <div class="ws-top" ${heroStyle()}><div class="ws-row"><div><span class="label">${ui.logDay ? `Apuntando para ${LOG_DAYS[ui.logDay].toLowerCase()}` : 'Entrenando'}</span><b>${esc(r.name)}</b></div>
       <div class="ws-clock num" data-clock="${d.started}">${mmss((Date.now() - d.started) / 1000)}</div></div>
       <div class="ws-prog"><div class="xpbar"><i style="width:${total ? done / total * 100 : 0}%"></i></div><span class="num">${done}/${total} series</span></div></div>
     <div class="ws-tabs">${tabs}</div>
@@ -1551,7 +1560,7 @@ function render() {
   }
   nav.hidden = false;
   const main = campaign ? viewCampaign(campaign) : ui.view === 'shop' ? viewShop() : ui.view === 'ranking' ? viewRanking() : ui.view === 'profile' ? viewProfile() : ui.view === 'player' ? viewPlayer() : ui.view === 'ideas' ? viewIdeas() : viewHome();
-  document.getElementById('app').innerHTML = viewTop() + viewAccount() + main + (ui.exStats ? viewExerciseStats() : '')
+  document.getElementById('app').innerHTML = viewTop() + viewLogBanner() + viewAccount() + main + (ui.exStats ? viewExerciseStats() : '')
     + `<datalist id="ex-list">${COMMON_EXERCISES.map(n => `<option value="${n}">`).join('')}</datalist>`;
   nav.innerHTML = viewNav();
   enhance();
@@ -1684,7 +1693,7 @@ const actions = {
   toggleLevel: el => { const card = el.closest('.lv-card'); ui.open[el.dataset.k] = card.dataset.open !== '1'; render(); },
 
   // Misiones
-  toggleMission: el => hitBoss(el, s => { const { c, m } = findMission(el); m.done = !m.done; m.doneAt = m.done ? Date.now() : null; logActivity(s, c.id, m.done ? 1 : -1); }),
+  toggleMission: el => hitBoss(el, s => { const { c, m } = findMission(el); m.done = !m.done; m.doneAt = m.done ? Date.now() : null; logActivity(s, c.id, m.done ? 1 : -1); if (m.done && ui.logDay) m.doneAt = new Date(logDate() + 'T20:00').getTime(); }),
   increment: el => hitBoss(el, s => { const { c, m } = findMission(el); if (m.count < m.target) { m.count++; logActivity(s, c.id, 1); if (m.count >= m.target) m.doneAt = Date.now(); } }),
   decrement: el => hitBoss(el, s => { const { c, m } = findMission(el); if (m.count > 0) { m.count--; logActivity(s, c.id, -1); } }),
 
@@ -1755,14 +1764,14 @@ const actions = {
   },
 
   // Diarias, cofre, tienda e inventario
-  toggleHabit: el => update(s => { const day = dayOf(s), h = (day.habits = day.habits || {}); h[el.dataset.k] = !h[el.dataset.k]; }),
+  toggleHabit: el => update(s => { const day = dayOf(s, logDate()), h = (day.habits = day.habits || {}); h[el.dataset.k] = !h[el.dataset.k]; }),
   openChest: () => {
-    const quests = dailyQuests();
-    if (!quests.every(q => questDone(q)) || (S.daily[today()] || {}).chest) return;
+    const date = logDate(), quests = dailyQuests(date);
+    if (!quests.every(q => questDone(q, date)) || (S.daily[date] || {}).chest) return;
     const gold = Math.random() < 0.15, chest = { coins: (30 + Math.floor(Math.random() * 31)) * (gold ? 2 : 1), xp: gold ? 50 : 25, gold };
-    update(s => { dayOf(s).chest = chest; });
+    update(s => { dayOf(s, date).chest = chest; });
     showChest(chest);
-    if (gold) postFeed('chest', `ha abierto un cofre dorado: +${chest.coins} monedas`, 'chest:' + today());
+    if (gold) postFeed('chest', `ha abierto un cofre dorado: +${chest.coins} monedas`, 'chest:' + date);
   },
   toggleWear: el => update(s => {
     const k = el.dataset.k;
@@ -1812,8 +1821,8 @@ const actions = {
     const kg = num(document.getElementById('kg').value);
     if (!(kg >= 30 && kg <= 250)) { toast('Pon un peso entre 30 y 250 kg'); return; }
     update(s => {
-      const last = s.weight.log[s.weight.log.length - 1];
-      if (last && last.d === today()) last.kg = kg; else s.weight.log.push({ d: today(), kg });
+      const d = logDate(), same = s.weight.log.find(p => p.d === d);
+      if (same) same.kg = kg; else { s.weight.log.push({ d, kg }); s.weight.log.sort((a, b) => (a.d < b.d ? -1 : 1)); }
       if (s.weight.start == null) s.weight.start = kg;
     });
   },
@@ -1823,9 +1832,10 @@ const actions = {
     update(s => { s.weight.goal = kg; });
   },
   toggleTrainedToday: () => update(s => {
-    const i = s.train.indexOf(today());
-    if (i >= 0) s.train.splice(i, 1); else { s.train.push(today()); s.train.sort(); }
+    const d = logDate(), i = s.train.indexOf(d);
+    if (i >= 0) s.train.splice(i, 1); else { s.train.push(d); s.train.sort(); }
   }),
+  logDay: el => { ui.logDay = +el.dataset.k; render(); if (ui.logDay) toast(`Apuntando para ${LOG_DAYS[ui.logDay].toLowerCase()}`); },
 
   // Rutinas y sesiones
   startSession: el => {
@@ -1928,9 +1938,10 @@ const actions = {
       volume: Object.values(ex).flat().reduce((a, st) => a + (st.kg || 0) * (st.r || 0), 0) };
     ui.draft = null; saveDraft();
     update(s => {
-      s.sessions.push({ id: uid(), d: today(), routine: r.id, rname: r.name, ex });
+      const day = logDate();
+      s.sessions.push({ id: uid(), d: day, routine: r.id, rname: r.name, ex }); s.sessions.sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
       if (s.sessions.length > 600) s.sessions.shift();
-      if (!s.train.includes(today())) { s.train.push(today()); s.train.sort(); }
+      if (!s.train.includes(day)) { s.train.push(day); s.train.sort(); }
     });
     window.scrollTo(0, 0);
     sum.records = totalRecords() - recordsBefore; sum.xp = Math.max(0, totalXP() - xpBefore0);
