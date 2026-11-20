@@ -101,7 +101,13 @@ const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, 
 const today = () => dateKey(new Date());
 /** Día en el que se está apuntando: hoy, o ayer/anteayer si se te olvidó apuntar algo. */
 const logDate = () => { const d = new Date(); d.setDate(d.getDate() - (ui.logDay || 0)); return dateKey(d); };
-const LOG_DAYS = ['Hoy', 'Ayer', 'Anteayer'];
+// Se puede apuntar en cualquier día de esta semana (desde el lunes); ayer siempre, aunque hoy sea lunes
+const maxBack = () => Math.max(1, (new Date().getDay() + 6) % 7);
+const backDate = i => { const d = new Date(); d.setDate(d.getDate() - i); return d; };
+const dayWord = i => (i === 0 ? 'hoy' : i === 1 ? 'ayer' : 'el ' + backDate(i).toLocaleDateString('es-ES', { weekday: 'long' }));
+const dayChip = i => (i === 0 ? 'Hoy' : i === 1 ? 'Ayer' : backDate(i).toLocaleDateString('es-ES', { weekday: 'short' }).replace('.', '').replace(/^./, c => c.toUpperCase()) + ' ' + backDate(i).getDate());
+const deDay = i => (i < 2 ? 'de ' + dayWord(i) : dayWord(i).replace(/^el /, 'del '));
+const dayOptions = () => Array.from({ length: maxBack() + 1 }, (_, i) => i);
 const shortDate = key => new Date(key + 'T12:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
 const pct = p => Math.round(p * 100);
 const colorVar = c => `var(--${c.color || 'lilac'})`;
@@ -1374,15 +1380,15 @@ function viewHero() {
     <p class="say mood-${m.kind}">${esc(m.line)}</p>
     <div class="hero-stats"><button class="coins-btn" data-act="open" data-id="shop" aria-label="Ir a la tienda">${coinBadge(coins(), 'coins')}</button></div></section>`;
 }
-const viewDaySwitch = () => `<div class="day-switch" role="tablist" aria-label="Día que apuntas">${LOG_DAYS.map((t, i) => `<button role="tab" data-act="logDay" data-k="${i}" aria-selected="${(ui.logDay || 0) === i}">${t}</button>`).join('')}</div>`;
+const viewDaySwitch = () => `<div class="day-switch" role="tablist" aria-label="Día que apuntas">${dayOptions().map(i => `<button role="tab" data-act="logDay" data-k="${i}" aria-selected="${(ui.logDay || 0) === i}">${dayChip(i)}</button>`).join('')}</div>`;
 function viewLogBanner() {
   if (!ui.logDay) return '';
   const d = new Date(logDate() + 'T12:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric' });
-  return `<div class="log-banner"><span>✏️ Apuntando para <b>${LOG_DAYS[ui.logDay].toLowerCase()}</b> (${d})</span><button data-act="logDay" data-k="0">Volver a hoy</button></div>`;
+  return `<div class="log-banner"><span>✏️ Apuntando para <b>${dayWord(ui.logDay)}</b> (${d})</span><button data-act="logDay" data-k="0">Volver a hoy</button></div>`;
 }
 function viewDaily() {
   const date = logDate(), quests = dailyQuests(date), done = quests.filter(q => questDone(q, date)).length, chest = (S.daily[date] || {}).chest, ready = done === quests.length && !chest;
-  return html`<section class="daily"><div class="edit-row spread"><h2 class="sec-t">Misiones de ${LOG_DAYS[ui.logDay || 0].toLowerCase()}</h2><span class="label num">${done}/${quests.length}</span></div>${viewDaySwitch()}
+  return html`<section class="daily"><div class="edit-row spread"><h2 class="sec-t">Misiones ${deDay(ui.logDay || 0)}</h2><span class="label num">${done}/${quests.length}</span></div>${viewDaySwitch()}
     <ul class="quests">${quests.map(q => {
       const ok = questDone(q, date), t = questText(q);
       const act = q.kind === 'habit' ? `data-act="toggleHabit" data-k="${q.key}"` : q.kind === 'train' && ui.logDay ? 'data-act="toggleTrainedToday"' : q.kind === 'advance' ? `data-act="open" data-id="${q.cid}"` : 'data-act="open" data-id="fisico"';
@@ -1461,7 +1467,7 @@ function viewWeight() {
     <div class="trio"><div><b>${fmt(w.start)}</b><span>Inicio kg</span></div><div><b>${fmt(cur)}</b><span>Actual kg</span></div><div><b>${fmt(w.goal)}</b><span>Objetivo kg</span></div></div>
     ${when(hasGoal, bar(p, 'bar2') + `<p class="hint"><b class="num">${pct(p)}%</b> del camino${cur != null ? ' · ' + fmt(Math.max(0, w.start - cur)) + ' kg menos desde el inicio' : ''}</p>`)}
     ${viewWeightChart()}
-    <div class="inrow"><input id="kg" type="number" inputmode="decimal" step="0.1" min="30" max="250" placeholder="Peso de ${LOG_DAYS[ui.logDay || 0].toLowerCase()} (kg)"><button class="btn primary" data-act="logWeight">Apuntar</button></div>
+    <div class="inrow"><input id="kg" type="number" inputmode="decimal" step="0.1" min="30" max="250" placeholder="Peso ${deDay(ui.logDay || 0)} (kg)"><button class="btn primary" data-act="logWeight">Apuntar</button></div>
     ${when(w.goal == null || ui.editing, `<div class="inrow"><input id="goal" type="number" inputmode="decimal" step="0.5" min="30" max="250" placeholder="Peso objetivo (kg)" value="${w.goal ?? ''}"><button class="btn" data-act="setGoal">${w.goal == null ? 'Fijar objetivo' : 'Cambiar objetivo'}</button></div>`)}
     <p class="hint">${w.start == null ? 'El primer peso que apuntes queda como peso inicial.' : 'Pésate siempre en las mismas condiciones, por ejemplo al levantarte.'}</p></section>`;
 }
@@ -1475,7 +1481,7 @@ function sessionLine(se) {
   return bits.join(' · ');
 }
 function viewTraining() {
-  const week = new Set(weekDays().map(d => d.key)), dayName = LOG_DAYS[ui.logDay || 0].toLowerCase(), trainedDay = S.train.includes(logDate());
+  const week = new Set(weekDays().map(d => d.key)), dayName = dayWord(ui.logDay || 0), trainedDay = S.train.includes(logDate());
   const recent = S.sessions.slice(-6).reverse();
   return html`<section class="panel nofold train-panel"><h3>Entrenar <span class="label">+${XP.train} XP cada día</span></h3>
     <div class="trio"><div><b>${S.train.length}</b><span>Total</span></div><div><b>${S.train.filter(k => week.has(k)).length}</b><span>Esta semana</span></div><div><b>${streak()}</b><span>Días seguidos</span></div></div>
@@ -1516,7 +1522,7 @@ function viewQuickLog() {
     : `<button class="btn wide" data-act="qAdding">+ Añadir ejercicio${isAct ? ' (opcional)' : ''}</button>`;
   return html`<div class="sheet-bg" data-act="closeSheet"></div><section class="sheet qlog" role="dialog" aria-label="Apuntar entreno"><div class="sheet-grip"></div>
     <div class="edit-row spread"><h3>Apuntar entreno</h3><button class="btn ghost" data-act="closeSheet">Cerrar</button></div>
-    <div class="qsec"><span class="label">¿Cuándo?</span><div class="day-switch">${LOG_DAYS.map((t, i) => `<button data-act="qDay" data-k="${i}" aria-selected="${q.day === i}">${t}</button>`).join('')}</div></div>
+    <div class="qsec"><span class="label">¿Cuándo?</span><div class="day-switch">${dayOptions().map(i => `<button data-act="qDay" data-k="${i}" aria-selected="${q.day === i}">${dayChip(i)}</button>`).join('')}</div></div>
     <div class="qsec"><span class="label">¿Qué has hecho?</span><div class="chips">
       <button class="chip-btn" data-act="qMode" data-k="activity" aria-pressed="${isAct}">🏃 Una actividad (baile, correr, partido…)</button>
       ${S.routines.map(x => `<button class="chip-btn" data-act="qRoutine" data-id="${x.id}" aria-pressed="${!isAct && q.routine === x.id}">${esc(x.name)}</button>`).join('')}</div></div>
@@ -1678,7 +1684,7 @@ function viewSession() {
   }
   const rest = d.rest && d.rest.until > Date.now() ? d.rest : null;
   return html`<section class="ws">
-    <div class="ws-top" ${heroStyle()}><div class="ws-row"><div><span class="label">${ui.logDay ? `Apuntando para ${LOG_DAYS[ui.logDay].toLowerCase()}` : 'Entrenando'}</span><b>${esc(r.name)}</b></div>
+    <div class="ws-top" ${heroStyle()}><div class="ws-row"><div><span class="label">${ui.logDay ? `Apuntando para ${dayWord(ui.logDay)}` : 'Entrenando'}</span><b>${esc(r.name)}</b></div>
       <div class="ws-clock num" data-clock="${d.started}">${mmss((Date.now() - d.started) / 1000)}</div></div>
       <div class="ws-prog"><div class="xpbar"><i style="width:${total ? done / total * 100 : 0}%"></i></div><span class="num">${done}/${total} series</span></div></div>
     <div class="ws-tabs">${tabs}</div>
@@ -2137,7 +2143,7 @@ const actions = {
     const d = logDate(), i = s.train.indexOf(d);
     if (i >= 0) s.train.splice(i, 1); else { s.train.push(d); s.train.sort(); }
   }),
-  logDay: el => { ui.logDay = +el.dataset.k; render(); if (ui.logDay) toast(`Apuntando para ${LOG_DAYS[ui.logDay].toLowerCase()}`); },
+  logDay: el => { ui.logDay = +el.dataset.k; render(); if (ui.logDay) toast(`Apuntando para ${dayWord(ui.logDay)}`); },
 
   // Rutinas y sesiones
   startSession: el => {

@@ -937,3 +937,6 @@ html{background:var(--bg)}
 .sess-hist li b{grid-column:1}
 .sess-hist li span{grid-column:1;font-size:12.5px;color:var(--muted)}
 .sess-hist li button{grid-column:2;grid-row:1/3}
+.day-switch{max-width:100%;overflow-x:auto;scrollbar-width:none;flex-wrap:nowrap}
+.day-switch::-webkit-scrollbar{display:none}
+.day-switch button{flex:none;white-space:nowrap}
