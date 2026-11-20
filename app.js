@@ -42,6 +42,10 @@ const GLYPH = {
   lock: svg('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', 'width="14" height="14"'),
   trophy: svg('<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5v1a3 3 0 0 0 3 3M16 6h3v1a3 3 0 0 1-3 3M12 13v4M8 20h8M10 17h4v3h-4z"/>'),
   share: svg('<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6"/>'),
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>',
+  stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+  next: svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
+  prev: svg('<path d="M19 12H5M11 6l-6 6 6 6"/>'),
   bag: svg('<path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>'),
   star: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1.5 14.2 9.8 22.5 12 14.2 14.2 12 22.5 9.8 14.2 1.5 12 9.8 9.8z"/></svg>',
 };
@@ -1099,29 +1103,100 @@ function viewRoutines() {
 function setInput(x, i, field, value, placeholder, label, mode = 'decimal') {
   return `<input inputmode="${mode}" data-x="${x}" data-i="${i}" data-f="${field}" value="${esc(value ?? '')}" placeholder="${placeholder}" aria-label="${label}">`;
 }
-function viewSetRow(x, s, i) {
-  const n = `<span class="i">${i + 1}</span>`, k = x.kind;
-  if (k === 'peso') return `<div class="setrow">${n}${setInput(x.id, i, 'kg', s.kg, 'kg o vacío', `Kilos serie ${i + 1}`)}<span>kg ×</span>${setInput(x.id, i, 'r', s.r, 'repes', `Repes serie ${i + 1}`, 'numeric')}<span>repes</span></div>`;
-  if (k === 'reps') return `<div class="setrow">${n}${setInput(x.id, i, 'r', s.r, 'repes', `Repes serie ${i + 1}`, 'numeric')}<span>repes +</span>${setInput(x.id, i, 'kg', s.kg, 'sin peso', `Kilos extra serie ${i + 1} (opcional)`)}<span>kg</span></div>`;
-  if (k === 'run') return `<div class="setrow">${n}${setInput(x.id, i, 'km', s.km, 'km', 'Kilómetros')}<span>km en</span>${setInput(x.id, i, 't', s.t, 'min', 'Minutos')}<span>min</span></div>`;
-  return `<div class="setrow one">${n}${setInput(x.id, i, 't', s.t, k === 'seg' ? 'segundos' : 'minutos', `Tiempo serie ${i + 1}`)}<span>${KIND_LABEL[k]}</span></div>`;
+// ---------- Modo entrenamiento: un ejercicio cada vez, series con botones grandes, descanso y cronómetro ----------
+const STEP = { r: 1, kg: 2.5, km: 0.5, t: 5 };
+const mmss = sec => { sec = Math.max(0, Math.round(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
+const sessionRoutine = () => S.routines.find(x => x.id === ui.draft.routine);
+function stepper(x, i, field, value, unit, label, step) {
+  return `<div class="stp"><button class="stp-b" data-act="wsStep" data-x="${x}" data-i="${i}" data-f="${field}" data-d="-${step}" aria-label="Menos ${label}">−</button>
+    ${setInput(x, i, field, value, '0', label, field === 'r' ? 'numeric' : 'decimal')}<span class="stp-u">${unit}</span>
+    <button class="stp-b" data-act="wsStep" data-x="${x}" data-i="${i}" data-f="${field}" data-d="${step}" aria-label="Más ${label}">+</button></div>`;
+}
+function viewSetRow(x, s, i, best) {
+  const k = x.kind, parsed = parseSet(k, s), pr = s.done && parsed && best != null && setScore(parsed) > best + 0.001;
+  const sw = ui.draft.sw && ui.draft.sw.x === x.id && ui.draft.sw.i === i;
+  let fields;
+  if (k === 'peso') fields = stepper(x.id, i, 'kg', s.kg, 'kg', `kilos serie ${i + 1}`, x.step || STEP.kg) + stepper(x.id, i, 'r', s.r, 'repes', `repes serie ${i + 1}`, 1);
+  else if (k === 'reps') fields = stepper(x.id, i, 'r', s.r, 'repes', `repes serie ${i + 1}`, 1) + `<label class="extra-kg">+ ${setInput(x.id, i, 'kg', s.kg, '0', `kilos extra serie ${i + 1}`)} kg extra</label>`;
+  else if (k === 'run') fields = stepper(x.id, i, 'km', s.km, 'km', 'kilómetros', STEP.km) + stepper(x.id, i, 't', s.t, 'min', 'minutos', 1);
+  else fields = stepper(x.id, i, 't', s.t, k === 'seg' ? 's' : 'min', `tiempo serie ${i + 1}`, k === 'seg' ? 5 : 0.5)
+    + `<button class="sw ${sw ? 'on' : ''}" data-act="wsWatch" data-x="${x.id}" data-i="${i}">${sw ? GLYPH.stop : GLYPH.play}<span data-sw="${x.id}-${i}">${sw ? mmss((Date.now() - ui.draft.sw.start) / 1000) : 'Cronómetro'}</span></button>`;
+  return `<div class="wset ${s.done ? 'done' : ''} ${pr ? 'pr' : ''}" data-pk="s-${x.id}-${i}"><span class="wset-n">${i + 1}</span><div class="wset-f">${fields}</div>
+    <button class="wset-ok check" data-act="wsDone" data-x="${x.id}" data-i="${i}" aria-pressed="${!!s.done}" aria-label="Serie ${i + 1} hecha">${GLYPH.check}</button>${pr ? '<em class="pr-badge">¡Récord!</em>' : ''}</div>`;
+}
+function sessionCounts() {
+  const r = sessionRoutine(); let total = 0, done = 0;
+  r.exercises.forEach(x => (ui.draft.ex[x.id] || []).forEach(s => { total++; if (s.done) done++; }));
+  return { total, done };
 }
 function viewSession() {
-  const r = S.routines.find(x => x.id === ui.draft.routine);
-  return html`<section class="panel"><h3>${esc(r.name)} <button class="btn ghost" data-act="discardSession">${ui.armed === 'session' ? '¿Descartar sesión?' : 'Descartar'}</button></h3>
-    ${r.exercises.map(x => {
-      const { last } = exerciseStats(x.id), next = nextSession(x), rows = ui.draft.ex[x.id] || [];
-      const maxKg = last ? Math.max(...last.sets.map(s => +s.kg || 0)) : 0;
-      const lastText = !last ? '' : x.kind === 'peso' || x.kind === 'reps'
-        ? `${last.sets.map(s => s.r).join(', ')} repes${maxKg > 0 ? ' con ' + fmt(maxKg) + ' kg' : x.kind === 'peso' ? ' sin peso' : ''}`
-        : last.sets.map(setText).join(', ');
-      return html`<div class="ex"><div><b>${esc(x.name)}</b><br><small>${scheme(x)}${lastText ? ' · última: ' + esc(lastText) : ''}</small></div>
-        <div class="sug ${next.levelUp ? '' : 'keep'}">${esc(next.tip)}</div>
-        ${rows.map((s, i) => viewSetRow(x, s, i))}
-        <div class="edit-row"><button class="btn" data-act="addSet" data-x="${x.id}">+ Serie</button>${when(rows.length > 1, `<button class="btn ghost" data-act="removeSet" data-x="${x.id}">− Serie</button>`)}</div></div>`;
-    })}
-    ${formOpenFor(r.id) && ui.exForm.inSession ? `<div class="ex">${viewExerciseForm(r, null, true)}</div>` : '<button class="btn add-ex" data-act="newExercise" data-r="' + r.id + '" data-session="1">+ Añadir ejercicio a esta sesión</button>'}
-    <button class="btn primary wide" data-act="saveSession">Guardar sesión</button><p class="hint">Lo que dejes vacío no se guarda, así que puedes saltarte ejercicios. Los que añadas se quedan en la rutina.</p></section>`;
+  const d = ui.draft, r = sessionRoutine(), xs = r.exercises;
+  if (!d.started) d.started = Date.now();
+  d.cur = Math.min(d.cur || 0, Math.max(0, xs.length - 1));
+  const { total, done } = sessionCounts(), x = xs[d.cur];
+  const allDone = ex => { const rows = d.ex[ex.id] || []; return rows.length && rows.every(s => s.done); };
+  const tabs = xs.map((e, i) => `<button class="ws-tab ${i === d.cur ? 'on' : ''} ${allDone(e) ? 'ok' : ''}" data-act="wsGo" data-k="${i}">${allDone(e) ? GLYPH.check : `<span>${i + 1}</span>`}${esc(e.name)}</button>`).join('');
+  let card = '<p class="hint">Esta rutina no tiene ejercicios. Añade uno abajo.</p>';
+  if (x) {
+    const st = exerciseStats(x.id), next = nextSession(x), rows = d.ex[x.id] || (d.ex[x.id] = []);
+    const best = st.best ? setScore(st.best) : null;
+    card = html`<div class="ws-card"><div class="ws-h"><span class="label">Ejercicio ${d.cur + 1} de ${xs.length}</span><h3>${esc(x.name)}</h3>
+        <small>${scheme(x)}${st.last ? ' · la última vez: ' + esc(st.last.sets.map(setText).join(', ')) : ''}</small></div>
+      <div class="ws-tips"><span class="sug ${next.levelUp ? '' : 'keep'}">${esc(next.tip)}</span>${st.best ? `<span class="best">${GLYPH.trophy} Récord: ${esc(setText(st.best))}</span>` : ''}</div>
+      <div class="wsets">${rows.map((row, i) => viewSetRow(x, row, i, best))}</div>
+      <div class="edit-row"><button class="btn" data-act="addSet" data-x="${x.id}">+ Serie</button>${when(rows.length > 1, `<button class="btn ghost" data-act="removeSet" data-x="${x.id}">− Serie</button>`)}</div>
+      <div class="ws-nav"><button class="btn" data-act="wsGo" data-k="${d.cur - 1}" ${d.cur === 0 ? 'disabled' : ''}>${GLYPH.prev}</button>
+        ${d.cur < xs.length - 1 ? `<button class="btn ${allDone(x) ? 'primary' : ''} grow" data-act="wsGo" data-k="${d.cur + 1}">Siguiente: ${esc(xs[d.cur + 1].name)} ${GLYPH.next}</button>` : `<button class="btn primary grow" data-act="saveSession">Terminar entreno</button>`}</div></div>`;
+  }
+  const rest = d.rest && d.rest.until > Date.now() ? d.rest : null;
+  return html`<section class="ws">
+    <div class="ws-top" ${heroStyle()}><div class="ws-row"><div><span class="label">Entrenando</span><b>${esc(r.name)}</b></div>
+      <div class="ws-clock num" data-clock="${d.started}">${mmss((Date.now() - d.started) / 1000)}</div></div>
+      <div class="ws-prog"><div class="xpbar"><i style="width:${total ? done / total * 100 : 0}%"></i></div><span class="num">${done}/${total} series</span></div></div>
+    <div class="ws-tabs">${tabs}</div>
+    ${card}
+    ${formOpenFor(r.id) && ui.exForm.inSession ? `<div class="panel">${viewExerciseForm(r, null, true)}</div>` : '<button class="btn add-ex" data-act="newExercise" data-r="' + r.id + '" data-session="1">+ Añadir ejercicio a esta sesión</button>'}
+    <div class="ws-end"><button class="btn primary wide" data-act="saveSession">Terminar y guardar</button>
+      <button class="btn ghost" data-act="discardSession">${ui.armed === 'session' ? '¿Seguro? Toca otra vez para descartar' : 'Descartar entreno'}</button>
+      <p class="hint">Marca cada serie con ✓ al hacerla y empieza el descanso. Lo que dejes vacío no se guarda. Los ejercicios que añadas se quedan en la rutina.</p></div>
+    <div class="rest ${rest ? 'on' : ''}" role="timer" aria-live="off"><span class="label">Descanso</span><b class="num" data-rest>${rest ? mmss((rest.until - Date.now()) / 1000) : ''}</b>
+      <button class="rest-b" data-act="wsRest" data-d="-15">−15</button><button class="rest-b" data-act="wsRest" data-d="15">+15</button><button class="rest-b skip" data-act="wsRest" data-d="0">Saltar</button>
+      <i class="rest-bar" data-restbar style="width:${rest ? (rest.until - Date.now()) / 1000 / rest.total * 100 : 0}%"></i></div></section>`;
+}
+// Reloj de la sesión, descanso y cronómetro: se actualizan solos sin repintar la pantalla
+setInterval(() => {
+  const d = ui.draft; if (!d) return;
+  document.querySelectorAll('[data-clock]').forEach(e => { e.textContent = mmss((Date.now() - +e.dataset.clock) / 1000); });
+  if (d.sw) { const e = document.querySelector(`[data-sw="${d.sw.x}-${d.sw.i}"]`); if (e) e.textContent = mmss((Date.now() - d.sw.start) / 1000); }
+  const bar = document.querySelector('.rest');
+  if (d.rest && bar) {
+    const left = (d.rest.until - Date.now()) / 1000;
+    if (left <= 0) {
+      d.rest = null; saveDraft(); bar.classList.remove('on');
+      try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) { /* sin vibración */ }
+      beep(); toast('¡Descanso terminado! A por la siguiente');
+    } else { bar.querySelector('[data-rest]').textContent = mmss(left); bar.querySelector('[data-restbar]').style.width = `${left / d.rest.total * 100}%`; }
+  }
+}, 250);
+let audioCtx = null;
+function beep() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.18].forEach(t => { const o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
+      g.gain.setValueAtTime(0.0001, audioCtx.currentTime + t); g.gain.exponentialRampToValueAtTime(0.25, audioCtx.currentTime + t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + t + 0.15);
+      o.start(audioCtx.currentTime + t); o.stop(audioCtx.currentTime + t + 0.16); });
+  } catch (e) { /* sin sonido */ }
+}
+function showWorkoutSummary(sum) {
+  const el = document.createElement('div');
+  el.className = 'lvlup ws-sum';
+  el.innerHTML = html`<div><span class="pill">${GLYPH.star}Entreno completado</span><h2>${esc(sum.name)}</h2>
+    <div class="sum-grid"><div><b class="num">${mmss(sum.secs)}</b><small>duración</small></div><div><b class="num">${sum.sets}</b><small>series</small></div>
+      <div><b class="num">${sum.volume ? fmt(sum.volume) : '–'}</b><small>kg movidos</small></div><div><b class="num">+${sum.xp}</b><small>XP</small></div></div>
+    ${sum.records ? `<p class="sum-pr">${GLYPH.trophy} ${sum.records === 1 ? '1 récord nuevo' : sum.records + ' récords nuevos'}</p>` : ''}
+    <button class="btn dark wide" data-close>¡Genial!</button></div>`;
+  el.addEventListener('click', e => { if (e.target === el || e.target.closest('[data-close]')) el.remove(); });
+  document.body.appendChild(el);
 }
 const sessionOpen = () => !!ui.draft && S.routines.some(r => r.id === ui.draft.routine);
 function viewBody() {
@@ -1235,6 +1310,7 @@ function viewShop() {
 }
 function viewCampaign(c) {
   const p = campaignProgress(c), inSession = c.tracker === 'body' && sessionOpen();
+  if (inSession) return viewSession();
   return html`<section class="c-hero" style="background:${colorVar(c)}"><span class="ico">${ICONS[c.icon] || ICONS.star}</span>
     <span class="pill">${GLYPH.star}Nivel ${currentLevelIndex(c) + 1} de ${c.levels.length}</span>
     <h2>${esc(c.name)}</h2>${when(c.sub, `<p>${esc(c.sub)}</p>`)}
@@ -1534,7 +1610,7 @@ const actions = {
   // Rutinas y sesiones
   startSession: el => {
     const r = S.routines.find(x => x.id === el.dataset.id);
-    ui.draft = { routine: r.id, ex: Object.fromEntries(r.exercises.map(x => [x.id, nextSession(x).rows])) };
+    ui.draft = { routine: r.id, started: Date.now(), cur: 0, restSec: 90, ex: Object.fromEntries(r.exercises.map(x => [x.id, nextSession(x).rows])) };
     saveDraft(); render(); window.scrollTo(0, 0);
   },
   discardSession: () => {
@@ -1543,7 +1619,37 @@ const actions = {
   },
   addSet: el => {
     const rows = ui.draft.ex[el.dataset.x], x = S.routines.find(r => r.id === ui.draft.routine).exercises.find(e => e.id === el.dataset.x);
-    rows.push(rows.length ? Object.assign({}, rows[rows.length - 1]) : blankSet(x));
+    rows.push(rows.length ? Object.assign({}, rows[rows.length - 1], { done: false }) : blankSet(x));
+    saveDraft(); render();
+  },
+  wsGo: el => { const k = +el.dataset.k, n = sessionRoutine().exercises.length; if (k < 0 || k >= n) return; ui.draft.cur = k; saveDraft(); render(); const t = document.querySelector('.ws-tabs .on'); if (t) t.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); const c = document.querySelector('.ws-card'); if (c) { c.classList.add('swap'); c.scrollIntoView({ block: 'start', behavior: 'smooth' }); } },
+  wsStep: el => {
+    const row = ui.draft.ex[el.dataset.x][+el.dataset.i], f = el.dataset.f, d = num(el.dataset.d);
+    const v = Math.max(0, Math.round(((num(row[f]) || 0) + d) * 100) / 100);
+    row[f] = f === 'r' ? String(Math.round(v)) : String(v);
+    saveDraft(); const input = document.querySelector(`input[data-x="${el.dataset.x}"][data-i="${el.dataset.i}"][data-f="${f}"]`); if (input) input.value = row[f];
+  },
+  wsDone: el => {
+    const x = sessionRoutine().exercises.find(e => e.id === el.dataset.x), row = ui.draft.ex[x.id][+el.dataset.i];
+    if (!row.done && !parseSet(x.kind, row)) { toast('Pon primero cuánto has hecho'); return; }
+    row.done = !row.done;
+    if (row.done) { const sec = ui.draft.restSec || 90; ui.draft.rest = { until: Date.now() + sec * 1000, total: sec }; }
+    saveDraft(); render();
+  },
+  wsRest: el => {
+    const d = ui.draft, k = num(el.dataset.d);
+    if (!d.rest) return;
+    if (!k) d.rest = null;
+    else { d.rest.until += k * 1000; d.rest.total = Math.max(15, d.rest.total + k); d.restSec = Math.max(15, Math.min(600, (d.restSec || 90) + k)); }
+    saveDraft(); render();
+  },
+  wsWatch: el => {
+    const d = ui.draft, x = sessionRoutine().exercises.find(e => e.id === el.dataset.x), i = +el.dataset.i;
+    if (d.sw && d.sw.x === x.id && d.sw.i === i) {
+      const secs = (Date.now() - d.sw.start) / 1000, row = d.ex[x.id][i];
+      row.t = x.kind === 'seg' ? String(Math.round(secs)) : String(Math.round(secs / 30) / 2 || 0.5);
+      d.sw = null; row.done = true; const sec = d.restSec || 90; d.rest = { until: Date.now() + sec * 1000, total: sec };
+    } else d.sw = { x: x.id, i, start: Date.now() };
     saveDraft(); render();
   },
   removeSet: el => { ui.draft.ex[el.dataset.x].pop(); saveDraft(); render(); },
@@ -1554,7 +1660,9 @@ const actions = {
       if (sets.length) ex[x.id] = sets;
     });
     if (!Object.keys(ex).length) { toast('Apunta al menos una serie'); return; }
-    const recordsBefore = totalRecords();
+    const recordsBefore = totalRecords(), xpBefore0 = totalXP(), started = ui.draft.started;
+    const sum = { name: r.name, secs: started ? (Date.now() - started) / 1000 : 0, sets: Object.values(ex).reduce((a, l) => a + l.length, 0),
+      volume: Object.values(ex).flat().reduce((a, st) => a + (st.kg || 0) * (st.r || 0), 0) };
     ui.draft = null; saveDraft();
     update(s => {
       s.sessions.push({ id: uid(), d: today(), routine: r.id, rname: r.name, ex });
@@ -1562,8 +1670,8 @@ const actions = {
       if (!s.train.includes(today())) { s.train.push(today()); s.train.sort(); }
     });
     window.scrollTo(0, 0);
-    const fresh = totalRecords() - recordsBefore;
-    if (fresh > 0) setTimeout(() => toast(fresh > 1 ? `${fresh} récords nuevos` : '1 récord nuevo'), 2000);
+    sum.records = totalRecords() - recordsBefore; sum.xp = Math.max(0, totalXP() - xpBefore0);
+    showWorkoutSummary(sum);
   },
   deleteRoutine: el => confirmTwice(el.dataset.id, s => { s.routines = s.routines.filter(x => x.id !== el.dataset.id); }),
   newExercise: el => { ui.exForm = { routine: el.dataset.r, id: null, inSession: !!el.dataset.session }; render(); focusExerciseForm(); },
