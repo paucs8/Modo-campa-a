@@ -1463,7 +1463,8 @@ function viewHome() {
     + when(ui.addingCampaign, viewNewCampaign()) + viewInventory();
 }
 function viewNav() {
-  const item = (id, label, icon) => `<button data-act="open" data-id="${id}" aria-label="${esc(label)}" ${ui.view === id ? 'aria-current="page"' : ''}>${icon}</button>`;
+  const body = S.campaigns.find(c => c.tracker === 'body'), cur = ui.view.startsWith('rt:') && body ? body.id : ui.view;
+  const item = (id, label, icon) => `<button data-act="open" data-id="${id}" aria-label="${esc(label)}" ${cur === id ? 'aria-current="page"' : ''}>${icon}</button>`;
   return item('home', 'Inicio', GLYPH.home) + item('ranking', 'Ranking', GLYPH.trophy) + item('shop', 'Tienda', GLYPH.bag) + S.campaigns.map(c => item(c.id, c.name, ICONS[c.icon] || ICONS.star)).join('');
 }
 
@@ -1516,7 +1517,7 @@ function viewRoutineTpl() {
   const have = new Set(S.routines.map(r => r.tpl));
   return html`<div class="sheet-bg" data-act="closeSheet"></div><section class="sheet" role="dialog" aria-label="Rutinas ya hechas"><div class="sheet-grip"></div>
     <div class="edit-row spread"><h3>Añadir rutina</h3><button class="btn ghost" data-act="closeSheet">Cerrar</button></div>
-    <form class="adde" data-form="addRoutine"><input name="n" placeholder="Nombre (ej: Día de piernas)" required maxlength="30" aria-label="Nombre de la nueva rutina"><button class="btn primary">Crear vacía</button></form>
+    <form class="adde" data-form="addRoutine"><input name="n" autocomplete="off" placeholder="Nombre (ej: Día de piernas)" required maxlength="30" aria-label="Nombre de la nueva rutina"><button class="btn primary">Crear vacía</button></form>
     <span class="label">O elige una ya hecha</span>
     <ul class="pick-list">${ROUTINE_TEMPLATES.map(t => { const ex = t.ex(); return `<li><button class="tpl" data-act="addRoutineTpl" data-k="${t.key}" ${have.has(t.key) ? 'disabled' : ''}><span class="tpl-e">${t.emoji}</span><span class="txt"><b>${esc(t.name)}</b><small>${esc(t.sub)} · ${ex.map(x => esc(x.name)).join(', ')}</small></span><span class="tpl-add">${have.has(t.key) ? GLYPH.check : GLYPH.plus}</span></button></li>`; }).join('')}</ul>
     <p class="hint">Después puedes cambiar series, repes o quitar ejercicios tocándolos en la rutina.</p></section>`;
@@ -1586,7 +1587,7 @@ function viewExerciseForm(r, x, inSession) {
   const hasHistory = x && S.sessions.some(s => s.ex[x.id]);
   return html`<form class="exform" data-form="saveExercise" data-r="${r.id}" ${x ? `data-x="${x.id}"` : ''} ${inSession ? 'data-session="1"' : ''}>
     <b>${x ? 'Editar ejercicio' : 'Nuevo ejercicio'}</b>
-    <label class="fld wide"><span>Nombre</span><input name="n" list="ex-list" placeholder="Ej: Dominadas" maxlength="50" required value="${x ? esc(x.name) : ''}"></label>
+    <label class="fld wide"><span>Nombre</span><input name="n" list="ex-list" autocomplete="off" placeholder="Ej: Dominadas" maxlength="50" required value="${x ? esc(x.name) : ''}"></label>
     <div class="fld wide"><span>Tipo</span><div class="seg" role="radiogroup" aria-label="Tipo de ejercicio">${Object.keys(KIND_SHORT).map(k =>
       `<label><input type="radio" name="k" value="${k}" ${k === kind ? 'checked' : ''}><span>${KIND_SHORT[k]}</span></label>`)}</div></div>
     <p class="hint kind-help">${KIND_HELP[kind]}</p>
@@ -1615,13 +1616,35 @@ function viewRoutine(r) {
     ${formOpenFor(r.id) && !ui.exForm.inSession ? viewExerciseForm(r, null, false) : `<button class="btn add-ex" data-act="newExercise" data-r="${r.id}">+ Ejercicio</button>`}</div>`;
 }
 function viewRoutines() {
-  const open = S.routines.find(r => r.id === ui.rtOpen) || S.routines[0];
-  const chips = S.routines.map(r => `<span class="rchip ${r === open ? 'on' : ''} ${ui.armed === r.id ? 'armed' : ''}"><button class="rn" data-act="rtOpen" data-id="${r.id}">${esc(r.name)}</button><button class="rx" data-act="deleteRoutine" data-id="${r.id}" aria-label="Borrar ${esc(r.name)}">${ui.armed === r.id ? '¿Borrar?' : '✕'}</button></span>`).join('');
+  const lastOf = r => { const se = [...S.sessions].reverse().find(x => x.routine === r.id); return se ? shortDate(se.d) : null; };
+  const rows = S.routines.map(r => html`<li><button class="rt-row" data-act="openRoutine" data-id="${r.id}"><span class="txt"><b>${esc(r.name)}</b><small>${r.exercises.length} ${r.exercises.length === 1 ? 'ejercicio' : 'ejercicios'}${lastOf(r) ? ' · última vez ' + lastOf(r) : ''}</small></span><span class="go">${GLYPH.chev}</span></button></li>`).join('');
   return html`<section class="panel"><h3>Rutinas <span class="label">+${XP.record} XP por récord</span></h3>
-    <div class="rchips">${chips}<button class="rchip add" data-act="openRoutineTpl">+ Añadir</button></div>
-    ${open ? viewRoutine(open) : '<p class="hint">No tienes rutinas. Dale a «+ Añadir» para crear una o elegir una ya hecha.</p>'}
-    <p class="hint">Toca una rutina para verla, la ✕ para borrarla (pide confirmación) y un ejercicio para cambiarlo.</p>
-</section>`;
+    ${S.routines.length ? `<ul class="rt-list">${rows}</ul>` : '<p class="hint">No tienes rutinas todavía.</p>'}
+    <button class="btn wide" data-act="openRoutineTpl">+ Añadir rutina</button>
+    <p class="hint">Toca una rutina para ver sus ejercicios antes de empezar, o para editarla.</p></section>`;
+}
+/** Pantalla de una rutina: ver qué toca hoy, empezar, apuntarla hecha o editarla. */
+function viewRoutinePage(r) {
+  const editing = ui.editing, body = S.campaigns.find(c => c.tracker === 'body');
+  const back = `<button class="back-btn" data-act="open" data-id="${body ? body.id : 'home'}">${GLYPH.prev} ${body ? esc(body.name) : 'Inicio'}</button>`;
+  const last = [...S.sessions].reverse().find(x => x.routine === r.id);
+  const items = r.exercises.map((x, i) => {
+    if (editing && formOpenFor(r.id, x.id) && !ui.exForm.inSession) return `<li class="formli">${viewExerciseForm(r, x, false)}</li>`;
+    const st = exerciseStats(x.id), next = nextSession(x), today = next.rows.map(row => parseSet(x.kind, row)).filter(Boolean).map(setText);
+    const toca = !today.length ? `${x.sets || 1} ${x.sets === 1 ? 'serie' : 'series'} · primera vez, elige tú` : today.every(t => t === today[0]) ? `${today.length} × ${today[0]}` : today.join(' · ');
+    return html`<li class="rx-card ${editing ? 'editing' : ''}"><div class="rx-h"><b>${esc(x.name)}</b><small>${scheme(x)}</small>
+        ${editing ? `<span class="rx-tools"><button class="icon-b" data-act="moveExercise" data-r="${r.id}" data-id="${x.id}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir">↑</button><button class="icon-b" data-act="moveExercise" data-r="${r.id}" data-id="${x.id}" data-d="1" ${i === r.exercises.length - 1 ? 'disabled' : ''} aria-label="Bajar">↓</button><button class="btn sm" data-act="editExercise" data-r="${r.id}" data-id="${x.id}">Editar</button></span>` : ''}</div>
+      ${editing ? '' : html`<div class="rx-b"><span class="rx-toca"><span class="label">Hoy toca</span>${esc(toca)}</span>${st.best ? `<button class="pr" data-act="openStats" data-id="${x.id}">${GLYPH.chart}${esc(setText(st.best))}</button>` : ''}</div>
+      <small class="hint">${esc(next.tip)}</small>`}</li>`;
+  }).join('');
+  return html`${back}<section class="rt-hero" ${heroStyle()}><span class="label">Rutina</span>
+      ${editing ? `<form class="inrow" data-form="renameRoutine" data-id="${r.id}"><input name="rn" value="${esc(r.name)}" maxlength="30" autocomplete="off" aria-label="Nombre de la rutina"><button class="btn">Guardar</button></form>` : `<h2>${esc(r.name)}</h2>`}
+      <p>${r.exercises.length} ${r.exercises.length === 1 ? 'ejercicio' : 'ejercicios'} · ${r.exercises.reduce((a, x) => a + (x.sets || 1), 0)} series${last ? ' · última vez ' + shortDate(last.d) : ' · aún no la has hecho'}</p>
+      ${editing ? '' : `<div class="train-cta"><button class="btn on-color" data-act="startSession" data-id="${r.id}">${GLYPH.play} Empezar</button><button class="btn dark" data-act="openLog" data-id="${r.id}">✏️ Apuntar hecha</button></div>`}</section>
+    <section class="panel nofold"><h3>Ejercicios <button class="btn ${editing ? 'primary' : ''} sm" data-act="toggleEditing">${editing ? 'Listo' : 'Editar'}</button></h3>
+      ${r.exercises.length ? `<ul class="rx-list">${items}</ul>` : '<p class="hint">Sin ejercicios todavía. Dale a Editar para añadirlos.</p>'}
+      ${editing ? (formOpenFor(r.id) && !ui.exForm.inSession ? viewExerciseForm(r, null, false) : `<button class="btn add-ex" data-act="newExercise" data-r="${r.id}">+ Ejercicio</button>`) : ''}
+      ${editing ? `<div class="danger-zone">${confirmBtn('deleteRoutine', r.id, 'Borrar esta rutina')}<small class="hint">Tu historial de entrenos no se borra.</small></div>` : ''}</section>`;
 }
 function setInput(x, i, field, value, placeholder, label, mode = 'decimal') {
   return `<input inputmode="${mode}" data-x="${x}" data-i="${i}" data-f="${field}" value="${esc(value ?? '')}" placeholder="${placeholder}" aria-label="${label}">`;
@@ -1880,7 +1903,7 @@ function viewCampaign(c) {
 
 function render() {
   const campaign = S.campaigns.find(c => c.id === ui.view);
-  if (!campaign && !['shop', 'ranking', 'profile', 'player', 'ideas'].includes(ui.view)) ui.view = 'home';
+  if (!campaign && !['shop', 'ranking', 'profile', 'player', 'ideas'].includes(ui.view) && !S.routines.some(r => 'rt:' + r.id === ui.view)) ui.view = 'home';
   const y = window.scrollY;
   const nav = document.getElementById('nav');
   if (!S.onboarded) {
@@ -1889,7 +1912,7 @@ function render() {
     return;
   }
   nav.hidden = false;
-  const main = campaign ? viewCampaign(campaign) : ui.view === 'shop' ? viewShop() : ui.view === 'ranking' ? viewRanking() : ui.view === 'profile' ? viewProfile() : ui.view === 'player' ? viewPlayer() : ui.view === 'ideas' ? viewIdeas() : viewHome();
+  const main = campaign ? viewCampaign(campaign) : ui.view === 'shop' ? viewShop() : ui.view === 'ranking' ? viewRanking() : ui.view === 'profile' ? viewProfile() : ui.view === 'player' ? viewPlayer() : ui.view === 'ideas' ? viewIdeas() : ui.view.startsWith('rt:') && S.routines.some(r => 'rt:' + r.id === ui.view) ? viewRoutinePage(S.routines.find(r => 'rt:' + r.id === ui.view)) : viewHome();
   document.getElementById('app').innerHTML = viewTop() + viewLogBanner() + viewAccount() + main + (ui.exStats ? viewExerciseStats() : '') + (ui.qlog ? viewQuickLog() : '') + (ui.startPick ? viewStartPicker() : '') + (ui.routineTpl ? viewRoutineTpl() : '')
     + `<datalist id="ex-list">${COMMON_EXERCISES.map(n => `<option value="${n}">`).join('')}</datalist>`;
   nav.innerHTML = viewNav();
@@ -2181,7 +2204,8 @@ const actions = {
   // Rutinas y sesiones
   startSession: el => {
     const r = S.routines.find(x => x.id === el.dataset.id);
-    ui.startPick = false;
+    ui.startPick = false; ui.editing = false;
+    { const b = S.campaigns.find(c => c.tracker === 'body'); if (b) ui.view = b.id; }
     ui.draft = { routine: r.id, started: Date.now(), cur: 0, restSec: 90, ex: Object.fromEntries(r.exercises.map(x => [x.id, nextSession(x).rows])) };
     saveDraft(); render(); window.scrollTo(0, 0);
   },
@@ -2287,17 +2311,19 @@ const actions = {
     if (error) { toast('No se pudo reaccionar'); loadFeed(); }
     else if (!mine) notify(f.user_id, 'react', `${e} A ${S.name} le mola tu logro`, `${f.text.charAt(0).toUpperCase() + f.text.slice(1)}`.replace(/^Ha /, 'Has '));
   },
+  openRoutine: el => { ui.view = 'rt:' + el.dataset.id; ui.editing = false; ui.exForm = null; render(); window.scrollTo(0, 0); },
+  moveExercise: el => update(s => { const r = s.routines.find(x => x.id === el.dataset.r), i = r.exercises.findIndex(x => x.id === el.dataset.id), j = i + (+el.dataset.d); if (j < 0 || j >= r.exercises.length) return; [r.exercises[i], r.exercises[j]] = [r.exercises[j], r.exercises[i]]; }, { reward: false }),
   rtOpen: el => { ui.rtOpen = el.dataset.id; ui.exForm = null; render(); },
   openRoutineTpl: () => { ui.routineTpl = true; render(); },
   addRoutineTpl: el => {
     const t = ROUTINE_TEMPLATES.find(x => x.key === el.dataset.k); if (!t || S.routines.some(r => r.tpl === t.key)) return;
-    const id = uid(); ui.rtOpen = id; ui.routineTpl = false;
+    const id = uid(); ui.routineTpl = false; ui.view = 'rt:' + id; ui.editing = false;
     update(s => { s.routines.push({ id, tpl: t.key, name: t.name.replace('Calistenia · ', 'Cali · '), exercises: t.ex() }); }, { reward: false });
     toast(`${t.emoji} Rutina «${t.name}» añadida`);
   },
   openStart: () => { ui.startPick = true; render(); },
-  openLog: () => {
-    const r = S.routines[0];
+  openLog: el => {
+    const r = (el && el.dataset && el.dataset.id && S.routines.find(x => x.id === el.dataset.id)) || S.routines[0];
     ui.qlog = { day: ui.logDay || 0, mode: r ? 'routine' : 'activity', routine: r ? r.id : null, activity: '', mins: '', note: '', ex: {}, skip: {}, extra: [], adding: false, addKind: 'reps' };
     if (r) r.exercises.forEach(x => { ui.qlog.ex[x.id] = nextSession(x).rows; });
     render();
@@ -2425,7 +2451,7 @@ const actions = {
     const mins = Math.round(sum.secs / 60);
     postFeed(sum.records ? 'record' : 'workout', `ha entrenado ${r.name}${mins ? ` · ${mins} min` : ''} · ${sum.sets} ${sum.sets === 1 ? 'serie' : 'series'}${sum.records ? ` y ha batido ${sum.records === 1 ? '1 récord' : sum.records + ' récords'}` : ''}`);
   },
-  deleteRoutine: el => confirmTwice(el.dataset.id, s => { s.routines = s.routines.filter(x => x.id !== el.dataset.id); }),
+  deleteRoutine: el => { const wasArmed = ui.armed === el.dataset.id; confirmTwice(el.dataset.id, s => { s.routines = s.routines.filter(x => x.id !== el.dataset.id); }); if (wasArmed && ui.view === 'rt:' + el.dataset.id) { const b = S.campaigns.find(c => c.tracker === 'body'); ui.view = b ? b.id : 'home'; ui.editing = false; render(); toast('Rutina borrada'); } },
   newExercise: el => { ui.exForm = { routine: el.dataset.r, id: null, inSession: !!el.dataset.session }; render(); focusExerciseForm(); },
   editExercise: el => { ui.exForm = { routine: el.dataset.r, id: el.dataset.id, inSession: false }; render(); focusExerciseForm(); },
   closeExerciseForm: repaint(() => { ui.exForm = null; }),
@@ -2551,10 +2577,11 @@ const forms = {
     update(() => l.missions.push(times > 1 ? count(name, xp, times) : mission(name, xp)), { reward: false });
     refocus(`[data-form="addMission"][data-l="${l.id}"]`);
   },
+  renameRoutine: (f, F) => { const name = F.rn.value.trim(); if (!name) return; update(s => { const r = s.routines.find(x => x.id === f.dataset.id); if (r) r.name = name; }, { reward: false }); toast('Nombre guardado'); },
   addRoutine: (f, F) => {
     const name = F.n.value.trim(); if (!name) return;
-    const id = uid(); ui.rtOpen = id; ui.routineTpl = false;
-    update(s => s.routines.push({ id, name, exercises: [] }), { reward: false });
+    const id = uid(); ui.routineTpl = false; ui.view = 'rt:' + id; ui.editing = true;
+    update(s => s.routines.push({ id, name, exercises: [] }), { reward: false }); window.scrollTo(0, 0);
     toast(`Rutina «${name}» creada. Añádele ejercicios`);
   },
   saveExercise: (f, F) => {
