@@ -204,6 +204,24 @@ function defaultRoutines() {
     { id: uid(), name: 'Gimnasio B', exercises: [exercise('Peso muerto rumano', 3, 8, 12), exercise('Press militar', 3, 8, 12), exercise('Jalón al pecho', 3, 8, 12), exercise('Extensión de tríceps', 2, 10, 15, 'peso', 1)] },
   ];
 }
+// Rutinas ya montadas para añadir con un toque
+const ROUTINE_TEMPLATES = [
+  { key: 'cali1', emoji: '🤸', name: 'Calistenia · Base', sub: 'Para empezar o volver a coger el ritmo', ex: () => [
+    exercise('Flexiones', 3, 8, 15, 'reps'), exercise('Dominadas australianas', 3, 6, 12, 'reps'), exercise('Fondos en banco', 3, 8, 15, 'reps'),
+    exercise('Sentadillas', 3, 15, 25, 'reps'), exercise('Plancha', 3, 0, 0, 'seg'), exercise('Hollow hold', 3, 0, 0, 'seg')] },
+  { key: 'cali2', emoji: '💪', name: 'Calistenia · Empuje', sub: 'Pecho, hombro y tríceps', ex: () => [
+    exercise('Fondos en paralelas', 4, 6, 12, 'reps'), exercise('Flexiones diamante', 3, 8, 15, 'reps'), exercise('Pike push-ups', 3, 6, 12, 'reps'),
+    exercise('Flexiones arqueras', 3, 4, 8, 'reps'), exercise('Pino contra la pared', 3, 0, 0, 'seg')] },
+  { key: 'cali3', emoji: '🧗', name: 'Calistenia · Tirón', sub: 'Espalda y bíceps', ex: () => [
+    exercise('Dominadas', 4, 4, 10, 'reps'), exercise('Chin-ups', 3, 5, 10, 'reps'), exercise('Remo invertido', 3, 8, 15, 'reps'),
+    exercise('Elevación de piernas colgado', 3, 6, 12, 'reps'), exercise('Colgarse de la barra', 3, 0, 0, 'seg')] },
+  { key: 'cali4', emoji: '🦵', name: 'Calistenia · Piernas y core', sub: 'Sin máquinas', ex: () => [
+    exercise('Sentadilla búlgara', 3, 8, 12, 'reps'), exercise('Pistol squat asistida', 3, 4, 8, 'reps'), exercise('Zancadas con salto', 3, 8, 12, 'reps'),
+    exercise('Puente de glúteo a una pierna', 3, 8, 15, 'reps'), exercise('L-sit', 3, 0, 0, 'seg'), exercise('Dragon flag negativas', 3, 3, 6, 'reps')] },
+  { key: 'cali5', emoji: '⭐', name: 'Calistenia · Skills', sub: 'Trucos: muscle-up, front lever, pino…', ex: () => [
+    exercise('Muscle-up negativas', 3, 3, 6, 'reps'), exercise('Front lever tuck', 4, 0, 0, 'seg'), exercise('Back lever tuck', 3, 0, 0, 'seg'),
+    exercise('Pino libre (intentos)', 5, 0, 0, 'seg'), exercise('Planche lean', 3, 0, 0, 'seg')] },
+];
 const reward = (name, cost) => ({ id: uid(), name, cost });
 const defaultRewards = () => [
   reward('Ir al cine', 250),
@@ -1494,6 +1512,13 @@ function viewTraining() {
     ${when(recent.length, html`<div class="stack-s"><span class="label">Últimos entrenos</span><ul class="hist sess-hist">${recent.map(se => `<li><b>${esc(se.rname || 'Entreno')}</b><span>${shortDate(se.d)}${sessionLine(se) ? ' · ' + sessionLine(se) : ''}${se.note ? ' · ' + esc(se.note) : ''}</span>${confirmBtn('deleteSession', se.id, 'Borrar')}</li>`)}</ul></div>`)}
     <button class="link-btn" data-act="toggleTrainedToday">${trainedDay ? `${dayName[0].toUpperCase() + dayName.slice(1)} ya cuenta como entrenado · quitar` : `Solo marcar ${dayName} como entrenado, sin detalles`}</button></section>`;
 }
+function viewRoutineTpl() {
+  const have = new Set(S.routines.map(r => r.tpl));
+  return html`<div class="sheet-bg" data-act="closeSheet"></div><section class="sheet" role="dialog" aria-label="Rutinas ya hechas"><div class="sheet-grip"></div>
+    <div class="edit-row spread"><h3>Rutinas ya hechas</h3><button class="btn ghost" data-act="closeSheet">Cerrar</button></div>
+    <ul class="pick-list">${ROUTINE_TEMPLATES.map(t => { const ex = t.ex(); return `<li><button class="tpl" data-act="addRoutineTpl" data-k="${t.key}" ${have.has(t.key) ? 'disabled' : ''}><span class="tpl-e">${t.emoji}</span><span class="txt"><b>${esc(t.name)}</b><small>${esc(t.sub)} · ${ex.map(x => esc(x.name)).join(', ')}</small></span><span class="tpl-add">${have.has(t.key) ? GLYPH.check : GLYPH.plus}</span></button></li>`; }).join('')}</ul>
+    <p class="hint">Después puedes cambiar series, repes o quitar ejercicios tocándolos en la rutina.</p></section>`;
+}
 function viewStartPicker() {
   return html`<div class="sheet-bg" data-act="closeSheet"></div><section class="sheet" role="dialog" aria-label="Entrenar ahora"><div class="sheet-grip"></div>
     <div class="edit-row spread"><h3>¿Qué vas a entrenar?</h3><button class="btn ghost" data-act="closeSheet">Cerrar</button></div>
@@ -1549,7 +1574,7 @@ const KIND_HELP = {
   min: 'Para rondas largas, como la comba. Te pondrá un objetivo un poco por encima de tu mejor marca.',
   run: 'Distancia y tiempo. Para ir a más kilómetros o a mejor ritmo.',
 };
-const COMMON_EXERCISES = ['Flexiones', 'Flexiones diamante', 'Flexiones inclinadas', 'Dominadas', 'Dominadas australianas', 'Fondos en paralelas', 'Fondos en silla', 'Sentadillas sin peso', 'Sentadilla búlgara', 'Zancadas', 'Puente de glúteo', 'Elevación de gemelos', 'Plancha', 'Plancha lateral', 'Abdominales', 'Elevación de piernas', 'Mountain climbers', 'Burpees', 'Jumping jacks', 'Saltar a la comba', 'Correr', 'Bici', 'Sentadilla', 'Peso muerto', 'Peso muerto rumano', 'Press banca', 'Press inclinado', 'Press militar', 'Remo con barra', 'Remo con mancuerna', 'Jalón al pecho', 'Curl de bíceps', 'Curl martillo', 'Extensión de tríceps', 'Elevaciones laterales', 'Prensa de piernas', 'Hip thrust', 'Baile', 'Yoga', 'Pilates', 'Estiramientos', 'Natación', 'Caminar', 'Pádel', 'Fútbol', 'Baloncesto', 'Escalada', 'Patinar', 'Boxeo', 'Giros', 'Saltos', 'Footwork', 'Aislamientos', 'Ondas', 'Freezes', 'Pasadas de coreografía', 'Cardio de baile', 'Estiramientos de baile'];
+const COMMON_EXERCISES = ['Flexiones', 'Flexiones diamante', 'Flexiones inclinadas', 'Dominadas', 'Dominadas australianas', 'Fondos en paralelas', 'Fondos en silla', 'Sentadillas sin peso', 'Sentadilla búlgara', 'Zancadas', 'Puente de glúteo', 'Elevación de gemelos', 'Plancha', 'Plancha lateral', 'Abdominales', 'Elevación de piernas', 'Mountain climbers', 'Burpees', 'Jumping jacks', 'Saltar a la comba', 'Correr', 'Bici', 'Sentadilla', 'Peso muerto', 'Peso muerto rumano', 'Press banca', 'Press inclinado', 'Press militar', 'Remo con barra', 'Remo con mancuerna', 'Jalón al pecho', 'Curl de bíceps', 'Curl martillo', 'Extensión de tríceps', 'Elevaciones laterales', 'Prensa de piernas', 'Hip thrust', 'Baile', 'Yoga', 'Pilates', 'Estiramientos', 'Natación', 'Caminar', 'Pádel', 'Fútbol', 'Baloncesto', 'Escalada', 'Patinar', 'Boxeo', 'Giros', 'Saltos', 'Footwork', 'Aislamientos', 'Ondas', 'Freezes', 'Pasadas de coreografía', 'Cardio de baile', 'Estiramientos de baile', 'Pike push-ups', 'Flexiones arqueras', 'Flexiones pseudo planche', 'Chin-ups', 'Remo invertido', 'Elevación de piernas colgado', 'Colgarse de la barra', 'Hollow hold', 'L-sit', 'Pistol squat', 'Pistol squat asistida', 'Dragon flag', 'Dragon flag negativas', 'Muscle-up', 'Muscle-up negativas', 'Front lever tuck', 'Back lever tuck', 'Pino contra la pared', 'Pino libre (intentos)', 'Flexiones en pino', 'Planche lean', 'Fondos en banco', 'Zancadas con salto', 'Puente de glúteo a una pierna'];
 
 function viewExerciseForm(r, x, inSession) {
   const kind = x ? x.kind : 'reps';
@@ -1590,7 +1615,8 @@ function viewRoutine(r) {
 function viewRoutines() {
   return html`<section class="panel"><h3>Rutinas <span class="label">+${XP.record} XP por récord</span></h3>
     ${S.routines.map(viewRoutine)}
-    <form class="adde" data-form="addRoutine"><input name="n" placeholder="Nueva rutina (ej: Día de piernas)" required maxlength="30" aria-label="Nombre de la nueva rutina"><button class="btn">Crear rutina</button></form>
+    <button class="btn wide" data-act="openRoutineTpl">🤸 Añadir una rutina ya hecha (calistenia…)</button>
+    <form class="adde" data-form="addRoutine"><input name="n" placeholder="O crea una (ej: Día de piernas)" required maxlength="30" aria-label="Nombre de la nueva rutina"><button class="btn">Crear rutina</button></form>
     <p class="hint">Toca un ejercicio para cambiarlo o borrarlo.</p>
 </section>`;
 }
@@ -1861,7 +1887,7 @@ function render() {
   }
   nav.hidden = false;
   const main = campaign ? viewCampaign(campaign) : ui.view === 'shop' ? viewShop() : ui.view === 'ranking' ? viewRanking() : ui.view === 'profile' ? viewProfile() : ui.view === 'player' ? viewPlayer() : ui.view === 'ideas' ? viewIdeas() : viewHome();
-  document.getElementById('app').innerHTML = viewTop() + viewLogBanner() + viewAccount() + main + (ui.exStats ? viewExerciseStats() : '') + (ui.qlog ? viewQuickLog() : '') + (ui.startPick ? viewStartPicker() : '')
+  document.getElementById('app').innerHTML = viewTop() + viewLogBanner() + viewAccount() + main + (ui.exStats ? viewExerciseStats() : '') + (ui.qlog ? viewQuickLog() : '') + (ui.startPick ? viewStartPicker() : '') + (ui.routineTpl ? viewRoutineTpl() : '')
     + `<datalist id="ex-list">${COMMON_EXERCISES.map(n => `<option value="${n}">`).join('')}</datalist>`;
   nav.innerHTML = viewNav();
   enhance();
@@ -2258,6 +2284,12 @@ const actions = {
     if (error) { toast('No se pudo reaccionar'); loadFeed(); }
     else if (!mine) notify(f.user_id, 'react', `${e} A ${S.name} le mola tu logro`, `${f.text.charAt(0).toUpperCase() + f.text.slice(1)}`.replace(/^Ha /, 'Has '));
   },
+  openRoutineTpl: () => { ui.routineTpl = true; render(); },
+  addRoutineTpl: el => {
+    const t = ROUTINE_TEMPLATES.find(x => x.key === el.dataset.k); if (!t || S.routines.some(r => r.tpl === t.key)) return;
+    update(s => { s.routines.push({ id: uid(), tpl: t.key, name: t.name.replace('Calistenia · ', 'Cali · '), exercises: t.ex() }); }, { reward: false });
+    toast(`${t.emoji} Rutina «${t.name}» añadida`); render();
+  },
   openStart: () => { ui.startPick = true; render(); },
   openLog: () => {
     const r = S.routines[0];
@@ -2267,7 +2299,7 @@ const actions = {
   },
   closeSheet: () => {
     const sh = document.querySelector('.sheet');
-    const done = () => { ui.qlog = null; ui.startPick = false; ui.exStats = null; render(); };
+    const done = () => { ui.qlog = null; ui.startPick = false; ui.routineTpl = false; ui.exStats = null; render(); };
     if (sh) { sh.classList.add('out'); const bg = document.querySelector('.sheet-bg'); if (bg) bg.classList.add('out'); setTimeout(done, 220); } else done();
   },
   qDay: el => { ui.qlog.day = +el.dataset.k; render(); },
