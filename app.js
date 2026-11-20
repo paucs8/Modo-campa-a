@@ -1123,12 +1123,15 @@ function viewInstallSteps() {
   if (isIOS()) return html`<ol class="steps"><li>Abre la app en <b>Safari</b> (en otros navegadores de iPhone no sale la opción).</li>
     <li>Toca el botón <b>Compartir</b> <span class="kbd">⬆︎</span>, el cuadrado con la flecha hacia arriba, abajo en el centro.</li>
     <li>Baja y elige <b>Añadir a pantalla de inicio</b>.</li><li>Dale a <b>Añadir</b> y abre la app desde el icono del cofre.</li></ol>`;
-  return html`${installPrompt ? '<button class="btn primary wide" data-act="installApp">📲 Instalar la app</button>' : ''}
-    <ol class="steps"><li>Abre la app en <b>Chrome</b>.</li><li>Toca el menú <span class="kbd">⋮</span> arriba a la derecha.</li>
-    <li>Elige <b>Instalar aplicación</b> o <b>Añadir a pantalla de inicio</b>.</li><li>Ábrela desde el icono del cofre.</li></ol>`;
+  const btn = installPrompt ? '<button class="btn primary wide" data-act="installApp">📲 Instalar la app</button>' : '';
+  if (!isMobile()) return html`${btn}<ol class="steps"><li>En <b>Chrome</b> o <b>Edge</b>, busca el icono de instalar <span class="kbd">⊕</span> a la derecha de la barra de direcciones.</li><li>Dale a <b>Instalar</b>. Se abrirá en su propia ventana, como un programa.</li></ol>`;
+  return html`${btn}<p class="hint">${btn ? 'Si el botón no funciona, hazlo a mano:' : 'En Android:'}</p>
+    <ol class="steps"><li><b>Chrome:</b> menú <span class="kbd">⋮</span> arriba a la derecha → <b>Instalar aplicación</b> o <b>Añadir a pantalla de inicio</b>.</li>
+    <li><b>Samsung Internet:</b> menú <span class="kbd">≡</span> abajo a la derecha → <b>Añadir página a</b> → <b>Pantalla de inicio</b>.</li>
+    <li>Ábrela desde el icono del cofre.</li></ol>`;
 }
 function viewInstallCard() {
-  if (isStandalone() || !isMobile() || installHidden() || !S.onboarded) return '';
+  if (isStandalone() || installHidden() || !S.onboarded || (!isMobile() && !installPrompt)) return '';
   return html`<section class="panel install-card nofold"><h3>📲 Ponla en tu pantalla de inicio</h3>
     <p class="hint">Así se abre como una app, a pantalla completa, y te pueden llegar los avisos.</p>
     ${viewInstallSteps()}<button class="btn ghost" data-act="hideInstall">Ahora no</button></section>`;
