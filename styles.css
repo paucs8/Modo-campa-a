@@ -833,3 +833,31 @@ button.pr svg{width:13px;height:13px}
 .log-banner{position:sticky;top:calc(6px + env(safe-area-inset-top,0px));z-index:11;display:flex;align-items:center;justify-content:space-between;gap:10px;
   background:var(--orange);color:#111;border-radius:18px;padding:10px 10px 10px 14px;font-size:13.5px;box-shadow:0 10px 24px -12px rgba(0,0,0,.35);animation:rise .3s var(--ease)}
 .log-banner button{border:0;background:#111;color:#fff;border-radius:999px;padding:7px 12px;font-weight:700;font-size:12.5px;flex:none}
+
+/* Invitaciones entre amigos */
+.inv-list,.v-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.inv-card{background:var(--bg);border-radius:20px;overflow:hidden;border:1px solid var(--hairline);transition:box-shadow .2s}
+.inv-card.open{box-shadow:0 0 0 2px var(--ink)}
+.inv-top{width:100%;display:flex;align-items:center;gap:12px;border:0;background:none;padding:12px 14px;text-align:left}
+.inv-ico{width:46px;height:46px;flex:none;border-radius:14px;display:grid;place-items:center;font-size:24px;background:color-mix(in srgb, var(--accent) 30%, var(--surface))}
+.inv-card:not(.can) .inv-ico{filter:grayscale(1);opacity:.6}
+.inv-top .txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.inv-top .txt b{font-size:15px}
+.inv-top .go{transform:rotate(-90deg);opacity:.5;transition:transform .25s var(--ease)}
+.inv-card.open .go{transform:rotate(0)}
+.inv-pick{padding:0 14px 14px;display:flex;flex-direction:column;gap:10px;animation:rise .3s var(--ease)}
+.inv-pick .chip-btn{display:inline-flex;align-items:center;gap:6px;padding:4px 12px 4px 4px}
+.inv-pick .chip-btn .ava{width:26px;height:26px;font-size:12px;border-width:1.5px}
+.voucher{display:flex;gap:12px;align-items:flex-start;border-radius:20px;padding:14px;background:var(--surface);border:1px solid var(--hairline)}
+.voucher.to-me.st-pending{background:linear-gradient(140deg,#FFE7A8,var(--orange));color:#111;border:0;box-shadow:0 12px 26px -14px rgba(255,160,40,.8)}
+.voucher.to-me.st-pending .hint{color:rgba(17,17,17,.7)}
+.voucher.to-me.st-pending .btn{border-color:#111;color:#111}
+.voucher.to-me.st-pending .btn.primary{background:#111;color:#fff}
+.voucher.st-done{border-color:color-mix(in srgb, var(--lime) 70%, transparent)}
+.voucher.st-declined{opacity:.6}
+.v-ico{font-size:30px;line-height:1;flex:none}
+.voucher .txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.voucher p{margin:0;font-size:14px;line-height:1.35}
+.v-h{display:flex;justify-content:space-between;gap:8px}
+.v-h small{font-size:12px;font-weight:700;opacity:.75}
+.vouchers{display:flex;flex-direction:column;gap:10px}

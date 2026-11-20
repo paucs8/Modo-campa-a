@@ -188,7 +188,7 @@ function migrate(s) {
   delete s.look.preset; delete s.look.star;
   s.look = Character.upgrade(s.look); // personaje por capas (v2)
   // Armario especial, semanas ganadas, cierre del lunes visto y cañas enviadas
-  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {}; s.feedSent = s.feedSent || {}; s.shields = s.shields || 0; s.shielded = s.shielded || []; s.coinLog = s.coinLog || []; s.duelsSettled = s.duelsSettled || {}; s.duelBase = s.duelBase || {};
+  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {}; s.feedSent = s.feedSent || {}; s.shields = s.shields || 0; s.shielded = s.shielded || []; s.coinLog = s.coinLog || []; s.duelsSettled = s.duelsSettled || {}; s.duelBase = s.duelBase || {}; s.vouchersDone = s.vouchersDone || {};
   if (s.photo === undefined) s.photo = null;
   s.v = 5;
   return s;
@@ -203,7 +203,7 @@ const ui = {
   addingCampaign: false, newIcon: 'star', newColor: 'pink',
   draft: storage.get(STORAGE.draft), sync: 'local', exForm: null, account: false,
   addingReward: false, bossHit: null,
-  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false }, profileExtras: true, prevCols: true, lookTab: 'cara', playerId: null, nudgeQueue: [], ideas: null, ideasState: 'idle', feed: null, feedState: 'idle', duels: null, duelsState: 'idle', duelForm: { metric: 'xp', stake: 50 }, isAdmin: false, ideaKind: 'campana',
+  ranking: null, rankingState: 'idle', rankTab: 'week', onboardCamps: { fisico: true, carnet: false }, profileExtras: true, prevCols: true, lookTab: 'cara', playerId: null, nudgeQueue: [], ideas: null, ideasState: 'idle', feed: null, feedState: 'idle', duels: null, duelsState: 'idle', vouchers: null, vouchersState: 'idle', invite: null, duelForm: { metric: 'xp', stake: 50 }, isAdmin: false, ideaKind: 'campana',
 };
 
 /* =========================================================
@@ -580,9 +580,46 @@ function syncDuels() {
   });
 }
 
+/* ---------- Invitaciones: gastas monedas y un amigo te invita a algo de verdad ---------- */
+const INVITES = [
+  { key: 'cafe', ico: '☕', name: 'Un café', verb: 'a un café', cost: 400 },
+  { key: 'desayuno', ico: '🥐', name: 'Desayunar', verb: 'a desayunar', cost: 1000 },
+  { key: 'cine', ico: '🎬', name: 'Ir al cine', verb: 'al cine', cost: 1800 },
+  { key: 'cena', ico: '🍕', name: 'Cenar', verb: 'a cenar', cost: 3000 },
+  { key: 'plan', ico: '🎳', name: 'Un plan a elegir', verb: 'a un plan (bolos, karting…)', cost: 3500 },
+  { key: 'montana', ico: '⛰️', name: 'Día de montaña', verb: 'a un día de montaña', cost: 5000 },
+];
+const THANKS = 0.2;   // quien invita recupera un 20% en monedas al cumplir
+const inviteOf = k => INVITES.find(i => i.key === k) || { ico: '🎁', name: k, verb: 'a algo', cost: 0 };
+async function loadVouchers() {
+  if (!cloud.user) return;
+  const { data, error } = await cloud.client.from('vouchers').select('*').order('created_at', { ascending: false }).limit(40);
+  if (error) { ui.vouchersState = missingTable(error) ? 'missing' : 'error'; return; }
+  ui.vouchers = (data || []).filter(v => v.from_id === cloud.user.id || v.to_id === cloud.user.id); ui.vouchersState = 'ok';
+  settleVouchers();
+  if (!isTyping()) render();
+}
+let vouchersTimer = null;
+function listenVouchers() {
+  if (cloud.voucherChannel) cloud.client.removeChannel(cloud.voucherChannel);
+  cloud.voucherChannel = cloud.client.channel('vouchers')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'vouchers' }, () => { clearTimeout(vouchersTimer); vouchersTimer = setTimeout(loadVouchers, 400); })
+    .subscribe();
+}
+/** Devuelve las monedas si te rechazan una invitación (una sola vez). */
+function settleVouchers() {
+  (ui.vouchers || []).forEach(v => {
+    if (v.from_id === cloud.user.id && v.status === 'declined' && !S.vouchersDone[v.id]) {
+      S.vouchersDone[v.id] = 'refund';
+      S.coinLog.push({ id: uid(), d: today(), amount: v.cost, note: `Devuelto: ${v.to_name} no puede invitarte ${inviteOf(v.reward).verb}` });
+      persist(); setTimeout(() => toast(`${v.to_name} no puede ahora. Te devolvemos ${v.cost} monedas`), 800);
+    }
+  });
+}
+
 /* ---------- Muro de actividad: lo que va consiguiendo cada uno, con reacciones ---------- */
 const REACTIONS = ['🔥', '💪', '👏'];
-const FEED_ICON = { duel: '⚔️', level: '⭐', campaign: '🏁', boss: '⚔️', workout: '🏋️', record: '🏆', chest: '💰', player: '🆙' };
+const FEED_ICON = { invite: '🎁', duel: '⚔️', level: '⭐', campaign: '🏁', boss: '⚔️', workout: '🏋️', record: '🏆', chest: '💰', player: '🆙' };
 /** Publica un logro en el muro (una sola vez por clave, para no repetir si desmarcas y vuelves a marcar). */
 function postFeed(kind, text, key) {
   if (!cloud.user || ui.feedState === 'missing') return;
@@ -759,6 +796,7 @@ async function startSync(user, { fresh = false } = {}) {
   listenRanking();
   listenFeed(); loadFeed();
   listenDuels(); loadDuels();
+  listenVouchers(); loadVouchers();
   useShields();
   listenNudges();
   publishProfile();
@@ -1060,6 +1098,35 @@ function viewDuelCard(d) {
   return html`<li class="duel ${over ? 'over' : ''} ${mine > theirs ? 'ahead' : mine < theirs ? 'behind' : ''}"><div class="duel-h"><span class="pill">⚔️ ${meta.name}</span><small>${status}</small></div>
     <div class="duel-vs">${side(me, mine, 'me')}<span class="vs">VS</span>${side(who, theirs, 'them')}</div><small class="hint">${stake} · ${meta.unit === 'XP' ? 'XP sumada' : 'Días entrenados'} desde ${shortDate(d.start_day)}</small></li>`;
 }
+function viewVoucher(v) {
+  const it = inviteOf(v.reward), toMe = v.to_id === cloud.user.id;
+  const st = { pending: toMe ? 'Te toca invitar' : 'Esperando', done: '¡Hecho!', declined: 'No pudo' }[v.status] || v.status;
+  const line = toMe ? `<b>${esc(v.from_name)}</b> ha canjeado ${v.cost} monedas: le invitas <b>${esc(it.verb)}</b>.` : `<b>${esc(v.to_name)}</b> te invita <b>${esc(it.verb)}</b>.`;
+  const actions = toMe && v.status === 'pending'
+    ? `<div class="edit-row"><button class="btn primary" data-act="voucherDone" data-id="${v.id}">Ya le he invitado</button><button class="btn ghost" data-act="deleteVoucher" data-id="${v.id}">No puedo</button></div><small class="hint">Al cumplir recuperas ${Math.round(v.cost * THANKS)} monedas de agradecimiento.</small>`
+    : '';
+  return `<li class="voucher st-${esc(v.status)} ${toMe ? 'to-me' : ''}"><span class="v-ico">${it.ico}</span><div class="txt"><div class="v-h"><small>${st}</small><small>${shortDate(v.created_at.slice(0, 10))}</small></div><p>${line}</p>${actions}</div></li>`;
+}
+function viewMyVouchers(onlyPending) {
+  if (!cloud.user || ui.vouchersState !== 'ok') return '';
+  const list = (ui.vouchers || []).filter(v => (onlyPending ? v.status === 'pending' && v.to_id === cloud.user.id : true));
+  if (!list.length) return '';
+  return html`<section class="vouchers"><div class="edit-row spread"><h2 class="sec-t">${onlyPending ? 'Te toca invitar' : 'Invitaciones'}</h2></div><ul class="v-list">${list.slice(0, onlyPending ? 5 : 12).map(viewVoucher)}</ul></section>`;
+}
+function viewInviteShop(have) {
+  if (!cloud.user) return '<section class="panel"><h3>Invitaciones</h3><p class="hint">Entra con tu cuenta para canjear monedas por planes con tus amigos.</p><button class="btn primary" data-act="syncInfo">Crear cuenta o entrar</button></section>';
+  if (ui.vouchersState === 'missing') return '<section class="panel"><h3>Invitaciones</h3><p class="hint">Falta activarlas en Supabase (supabase-invitaciones.sql).</p></section>';
+  const friends = (ui.ranking || []).filter(r => r.user_id !== cloud.user.id), inv = ui.invite;
+  const cards = INVITES.map(it => {
+    const can = have >= it.cost, open = inv && inv.key === it.key;
+    return html`<li class="inv-card ${can ? 'can' : ''} ${open ? 'open' : ''}"><button class="inv-top" data-act="pickInvite" data-k="${it.key}" ${can ? '' : 'aria-disabled="true"'}>
+      <span class="inv-ico">${it.ico}</span><span class="txt"><b>${it.name}</b>${coinBadge(it.cost)}</span>${can ? `<span class="go">${GLYPH.chev}</span>` : `<span class="need num">Te faltan ${it.cost - have}</span>`}</button>
+      ${!open ? '' : html`<div class="inv-pick"><span class="label">¿Quién te invita?</span>${friends.length ? `<div class="chips">${friends.map(f => `<button class="chip-btn ${inv.to === f.user_id ? '' : ''}" data-act="pickInviter" data-id="${esc(f.user_id)}" aria-pressed="${inv.to === f.user_id}">${avatar(f)}${esc(f.name)}</button>`).join('')}</div>` : '<p class="hint">Aún no hay nadie más. Invita a tus amigos desde el Ranking.</p>'}
+        ${when(inv.to, `<button class="btn primary wide" data-act="buyInvite">${ui.armed === 'buy:invite' ? `¿Gastar ${it.cost} monedas?` : `Canjear: ${esc((friends.find(f => f.user_id === inv.to) || {}).name || '')} te invita ${esc(it.verb)}`}</button>`)}</div>`}</li>`;
+  }).join('');
+  return html`<section class="panel invites"><h3>Invitaciones <span class="label">un amigo te invita</span></h3><ul class="inv-list">${cards}</ul>
+    <p class="hint">Eliges a quién y le llega el vale. Si no puede, te devolvemos las monedas. Cuando cumple, recupera un ${THANKS * 100}% de agradecimiento.</p></section>`;
+}
 function viewDuels() {
   if (!cloud.user || !ui.duels || ui.duelsState !== 'ok') return '';
   const recent = ui.duels.filter(d => d.status === 'pending' || d.status === 'active' || (d.status === 'finished' && today() < addDays(d.end_day, 3)));
@@ -1182,7 +1249,7 @@ function viewNewCampaign() {
     <p class="hint">Se crea con un nivel vacío y la abres en modo edición para añadir misiones.</p></section>`;
 }
 function viewHome() {
-  return viewHero() + viewDaily() + viewDuels() + viewRankTeaser() + viewFeed(3) + viewWeek() + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
+  return viewHero() + viewDaily() + viewMyVouchers(true) + viewDuels() + viewRankTeaser() + viewFeed(3) + viewWeek() + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
     <button class="cc add" data-act="toggleNewCampaign">${GLYPH.plus}Nueva campaña</button></div></section>`
     + when(ui.addingCampaign, viewNewCampaign()) + viewInventory();
 }
@@ -1506,13 +1573,14 @@ function viewBoss(c) {
 function viewShop() {
   const have = coins(), recent = S.purchases.slice(-6).reverse();
   return html`<section class="c-hero shop-hero"><span class="pill">${GLYPH.bag}Tienda</span>
-    <h2>Tus recompensas</h2><p>Canjea monedas por premios de verdad. Los pones tú.</p>
+    <h2>Tus recompensas</h2><p>Canjea monedas por planes con tus amigos o por tus propios premios.</p>
     <div class="row"><span class="big num coins-big"><img src="${IMG.coin}" alt=""><span data-count="shop">${have}</span></span>
       <button class="btn dark" data-act="toggleEditing">${ui.editing ? 'Listo' : 'Editar'}</button></div></section>
     <section class="shield-card ${S.shields ? 'has' : ''}"><div class="shield-ico">🛡️<b class="num">${S.shields}</b></div>
       <div class="txt"><b>Escudo de racha</b><small>Si un día no haces nada, se gasta solo y tu racha sigue. Puedes tener ${SHIELD_MAX}.</small>${coinBadge(SHIELD_COST)}</div>
       ${S.shields >= SHIELD_MAX ? '<span class="owned">Al máximo</span>' : have >= SHIELD_COST ? `<button class="btn ${ui.armed === 'buy:shield' ? 'primary' : 'dark'}" data-act="buyShield">${ui.armed === 'buy:shield' ? '¿Comprar?' : 'Comprar'}</button>` : `<span class="need num">Te faltan ${SHIELD_COST - have}</span>`}</section>
-    <section class="panel"><h3>Premios</h3>
+    ${viewInviteShop(have)}${viewMyVouchers(false)}
+    <section class="panel"><h3>Mis premios <span class="label">para ti solo</span></h3>
       <ul class="rewards">${S.rewards.map(r => {
         const can = have >= r.cost, armed = ui.armed === 'buy:' + r.id;
         return `<li class="reward ${can ? 'can' : ''}"><div class="txt"><b>${esc(r.name)}</b>${coinBadge(r.cost)}</div>
@@ -1571,7 +1639,7 @@ function render() {
 
 // ---------- Detalles visuales tras pintar: paneles plegables, animaciones de entrada y de "hecho" ----------
 const FOLD_KEY = 'modo-campana-plegados';
-const FOLD_CLOSED = ['Cuenta', 'Tu cuenta', 'Sincronización', 'Canjeado', 'Armario especial'];   // empiezan cerrados
+const FOLD_CLOSED = ['Mis premios', 'Cuenta', 'Tu cuenta', 'Sincronización', 'Canjeado', 'Armario especial'];   // empiezan cerrados
 const NO_FOLD = ['Nueva campaña', 'Mandar una idea', 'Para Claude'];
 let folds = {}; try { folds = JSON.parse(localStorage.getItem(FOLD_KEY) || '{}'); } catch { folds = {}; }
 const fx = { view: null, done: null, counts: {} };
@@ -1851,6 +1919,38 @@ const actions = {
     const rows = ui.draft.ex[el.dataset.x], x = S.routines.find(r => r.id === ui.draft.routine).exercises.find(e => e.id === el.dataset.x);
     rows.push(rows.length ? Object.assign({}, rows[rows.length - 1], { done: false }) : blankSet(x));
     saveDraft(); render();
+  },
+  pickInvite: el => {
+    const it = inviteOf(el.dataset.k);
+    if (coins() < it.cost) { toast(`Te faltan ${it.cost - coins()} monedas`); return; }
+    ui.invite = ui.invite && ui.invite.key === it.key ? null : { key: it.key, to: null }; render();
+  },
+  pickInviter: el => { ui.invite.to = el.dataset.id; ui.armed = null; render(); },
+  buyInvite: async el => {
+    const inv = ui.invite, it = inviteOf(inv && inv.key), f = (ui.ranking || []).find(r => r.user_id === (inv && inv.to));
+    if (!inv || !f || coins() < it.cost) return;
+    if (ui.armed !== 'buy:invite') { ui.armed = 'buy:invite'; render(); return; }
+    ui.armed = null; el.disabled = true;
+    const { data, error } = await cloud.client.from('vouchers').insert({ from_id: cloud.user.id, to_id: f.user_id, from_name: S.name, to_name: f.name, reward: it.key, cost: it.cost }).select().maybeSingle();
+    if (error) { toast(missingTable(error) ? 'Falta activar las invitaciones en Supabase' : 'No se pudo canjear'); el.disabled = false; return; }
+    update(s => { s.purchases.push({ id: uid(), name: `${it.name} con ${f.name}`, cost: it.cost, d: today(), voucher: data && data.id }); }, { reward: false });
+    ui.invite = null; toast(`🎁 Vale enviado: ${f.name} te invita ${it.verb}`); loadVouchers();
+  },
+  voucherDone: async el => {
+    const v = (ui.vouchers || []).find(x => String(x.id) === el.dataset.id); if (!v) return;
+    const { error } = await cloud.client.from('vouchers').update({ status: 'done', done_at: new Date().toISOString() }).eq('id', v.id);
+    if (error) { toast('No se pudo'); return; }
+    v.status = 'done';
+    if (!S.vouchersDone[v.id]) { S.vouchersDone[v.id] = 'thanks'; const bonus = Math.round(v.cost * THANKS); update(s => { s.coinLog.push({ id: uid(), d: today(), amount: bonus, note: `Gracias por invitar a ${v.from_name}` }); }, { reward: false }); toast(`¡Bien hecho! +${bonus} monedas`); }
+    postFeed('invite', `ha invitado a ${v.from_name} ${inviteOf(v.reward).verb}`, 'voucher:' + v.id);
+    loadVouchers();
+  },
+  deleteVoucher: async el => {
+    const v = (ui.vouchers || []).find(x => String(x.id) === el.dataset.id); if (!v) return;
+    if (ui.armed !== 'v' + v.id) { ui.armed = 'v' + v.id; el.textContent = '¿Seguro? Se le devuelven'; return; }
+    ui.armed = null;
+    const { error } = await cloud.client.from('vouchers').update({ status: 'declined' }).eq('id', v.id);
+    if (error) toast('No se pudo'); else loadVouchers();
   },
   buyShield: () => {
     if (S.shields >= SHIELD_MAX || coins() < SHIELD_COST) return;
