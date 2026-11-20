@@ -1113,11 +1113,31 @@ ${viewPushPanel()}
         : ui.sync === 'off' ? '<p class="hint">Sin conexión con Supabase: todo se guarda en este dispositivo.</p>'
         : '<p class="hint">Crea una cuenta para guardar tu progreso, usarlo en varios dispositivos y salir en el ranking.</p><button class="btn primary" data-act="syncInfo">Crear cuenta o entrar</button>'}</section>`;
 }
+// ---------- Instalar la app en la pantalla de inicio ----------
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; if (S.onboarded) render(); });
+window.addEventListener('appinstalled', () => { installPrompt = null; toast('📲 ¡App instalada! Ábrela desde el icono'); render(); });
+const isMobile = () => /Android|iPhone|iPad|iPod/.test(navigator.userAgent);
+const installHidden = () => { try { return localStorage.getItem('modo-campana-instalar') === 'no'; } catch (e) { return false; } };
+function viewInstallSteps() {
+  if (isIOS()) return html`<ol class="steps"><li>Abre la app en <b>Safari</b> (en otros navegadores de iPhone no sale la opción).</li>
+    <li>Toca el botón <b>Compartir</b> <span class="kbd">⬆︎</span>, el cuadrado con la flecha hacia arriba, abajo en el centro.</li>
+    <li>Baja y elige <b>Añadir a pantalla de inicio</b>.</li><li>Dale a <b>Añadir</b> y abre la app desde el icono del cofre.</li></ol>`;
+  return html`${installPrompt ? '<button class="btn primary wide" data-act="installApp">📲 Instalar la app</button>' : ''}
+    <ol class="steps"><li>Abre la app en <b>Chrome</b>.</li><li>Toca el menú <span class="kbd">⋮</span> arriba a la derecha.</li>
+    <li>Elige <b>Instalar aplicación</b> o <b>Añadir a pantalla de inicio</b>.</li><li>Ábrela desde el icono del cofre.</li></ol>`;
+}
+function viewInstallCard() {
+  if (isStandalone() || !isMobile() || installHidden() || !S.onboarded) return '';
+  return html`<section class="panel install-card nofold"><h3>📲 Ponla en tu pantalla de inicio</h3>
+    <p class="hint">Así se abre como una app, a pantalla completa, y te pueden llegar los avisos.</p>
+    ${viewInstallSteps()}<button class="btn ghost" data-act="hideInstall">Ahora no</button></section>`;
+}
 function viewPushPanel() {
   const on = !!avisos.endpoint && (!('Notification' in window) || Notification.permission === 'granted');
   let body;
   if (!cloud.user) body = '<p class="hint">Entra con tu cuenta para recibir avisos en el móvil.</p>';
-  else if (isIOS() && !isStandalone()) body = '<p class="hint">En iPhone los avisos solo funcionan con la app añadida a la pantalla de inicio. Ábrela desde el icono y vuelve aquí.</p>';
+  else if (isIOS() && !isStandalone()) body = html`<p class="hint">En iPhone los avisos solo funcionan con la app en la pantalla de inicio. Así se hace:</p>${viewInstallSteps()}<p class="hint">Luego ábrela desde el icono y vuelve aquí para activarlos.</p>`;
   else if (!pushSupported()) body = '<p class="hint">Este navegador no permite avisos. Prueba desde la app instalada o con Chrome.</p>';
   else if ('Notification' in window && Notification.permission === 'denied') body = '<p class="hint">Has bloqueado los avisos. Actívalos en los ajustes del móvil (Notificaciones → Modo Campaña) y vuelve aquí.</p>';
   else if (!on) body = '<p class="hint">Te aviso si se te olvidan las misiones del día, si te pasan en la liga o si te retan. Tú eliges cuáles.</p><button class="btn primary wide" data-act="pushOn">🔔 Activar avisos en este móvil</button>';
@@ -1406,7 +1426,7 @@ function viewNewCampaign() {
     <p class="hint">Las ya montadas las puedes editar después: cambiar misiones, añadir niveles… Las de cero empiezan con un nivel vacío.</p></section>`;
 }
 function viewHome() {
-  return viewHero() + viewDaily() + viewMyVouchers(true) + viewDuels() + viewRankTeaser() + viewFeed(3) + viewWeek() + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
+  return viewInstallCard() + viewHero() + viewDaily() + viewMyVouchers(true) + viewDuels() + viewRankTeaser() + viewFeed(3) + viewWeek() + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
     <button class="cc add" data-act="toggleNewCampaign">${GLYPH.plus}Nueva campaña</button></div></section>`
     + when(ui.addingCampaign, viewNewCampaign()) + viewInventory();
 }
@@ -1792,7 +1812,7 @@ function enhance() {
   // Paneles plegables: el título abre y cierra, y se recuerda cómo lo dejaste
   app.querySelectorAll('section.panel').forEach(p => {
     const h = p.firstElementChild;
-    if (!h || h.tagName !== 'H3') return;
+    if (!h || h.tagName !== 'H3' || p.classList.contains('nofold')) return;
     const title = (h.childNodes[0] && h.childNodes[0].textContent || '').trim();
     if (!title || NO_FOLD.includes(title)) return;
     const key = (S.campaigns.some(c => c.id === ui.view) ? 'c' : ui.view) + ':' + title;
@@ -2106,6 +2126,8 @@ const actions = {
     const { error } = await cloud.client.from('vouchers').update({ status: 'declined' }).eq('id', v.id);
     if (error) toast('No se pudo'); else loadVouchers();
   },
+  installApp: async () => { if (!installPrompt) return; installPrompt.prompt(); try { await installPrompt.userChoice; } catch (e) { /* cancelado */ } installPrompt = null; render(); },
+  hideInstall: () => { try { localStorage.setItem('modo-campana-instalar', 'no'); } catch (e) { /* sin almacenamiento */ } render(); toast('Lo tienes en tu perfil, en Avisos, por si cambias de idea'); },
   pushOn: () => enablePush(),
   pushOff: () => disablePush(),
   pushKind: el => { const k = el.dataset.k; avisos.kinds = avisos.kinds.includes(k) ? avisos.kinds.filter(x => x !== k) : [...avisos.kinds, k]; savePushLocal(); pushSync(true); render(); },
