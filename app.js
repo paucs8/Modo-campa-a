@@ -205,22 +205,59 @@ function defaultRoutines() {
   ];
 }
 // Rutinas ya montadas para añadir con un toque
+const ROUTINE_CATS = { casa: '🏠 En casa', gym: '🏋️ Gimnasio', cali: '🤸 Calistenia', cardio: '🏃 Cardio', movilidad: '🧘 Movilidad y baile' };
 const ROUTINE_TEMPLATES = [
-  { key: 'cali1', emoji: '🤸', name: 'Calistenia · Base', sub: 'Para empezar o volver a coger el ritmo', ex: () => [
+  { key: 'casa1', cat: 'casa', emoji: '🏠', name: 'Casa · Cuerpo entero', sub: 'Sin material, 30 minutos', ex: () => [
+    exercise('Flexiones', 3, 8, 15, 'reps'), exercise('Sentadillas', 3, 15, 25, 'reps'), exercise('Zancadas', 3, 10, 16, 'reps'),
+    exercise('Fondos en silla', 3, 8, 15, 'reps'), exercise('Puente de glúteo', 3, 12, 20, 'reps'), exercise('Plancha', 3, 0, 0, 'seg')] },
+  { key: 'casa2', cat: 'casa', emoji: '🔥', name: 'Casa · HIIT', sub: 'Rápida y que cansa', ex: () => [
+    exercise('Burpees', 4, 8, 15, 'reps'), exercise('Mountain climbers', 4, 0, 0, 'seg'), exercise('Jumping jacks', 4, 0, 0, 'seg'),
+    exercise('Sentadillas con salto', 4, 10, 20, 'reps'), exercise('Plancha', 3, 0, 0, 'seg')] },
+  { key: 'casa3', cat: 'casa', emoji: '🎯', name: 'Casa · Abdomen', sub: 'Core en 15 minutos', ex: () => [
+    exercise('Abdominales', 3, 15, 25, 'reps'), exercise('Elevación de piernas', 3, 10, 15, 'reps'), exercise('Plancha lateral', 3, 0, 0, 'seg'),
+    exercise('Hollow hold', 3, 0, 0, 'seg'), exercise('Bicicleta abdominal', 3, 20, 30, 'reps')] },
+  { key: 'casa4', cat: 'casa', emoji: '🏋️', name: 'Casa · Con mancuernas', sub: 'Si tienes un par en casa', ex: () => [
+    exercise('Sentadilla goblet', 3, 10, 15), exercise('Press de hombro con mancuernas', 3, 8, 12, 'peso', 1), exercise('Remo con mancuerna', 3, 8, 12, 'peso', 1),
+    exercise('Peso muerto rumano con mancuernas', 3, 10, 15), exercise('Curl de bíceps', 3, 10, 15, 'peso', 1)] },
+  { key: 'gym1', cat: 'gym', emoji: '🔁', name: 'Gym · Full body', sub: '3 días a la semana, para empezar', ex: () => [
+    exercise('Sentadilla', 3, 8, 12), exercise('Press banca', 3, 8, 12), exercise('Jalón al pecho', 3, 8, 12),
+    exercise('Peso muerto rumano', 3, 8, 12), exercise('Press militar', 3, 8, 12), exercise('Plancha', 3, 0, 0, 'seg')] },
+  { key: 'gym2', cat: 'gym', emoji: '➡️', name: 'Gym · Empuje', sub: 'Pecho, hombro y tríceps', ex: () => [
+    exercise('Press banca', 4, 6, 10), exercise('Press inclinado con mancuernas', 3, 8, 12, 'peso', 1), exercise('Press militar', 3, 8, 12),
+    exercise('Elevaciones laterales', 3, 12, 15, 'peso', 1), exercise('Extensión de tríceps', 3, 10, 15, 'peso', 1)] },
+  { key: 'gym3', cat: 'gym', emoji: '⬅️', name: 'Gym · Tirón', sub: 'Espalda y bíceps', ex: () => [
+    exercise('Peso muerto', 3, 5, 8), exercise('Dominadas', 3, 5, 10, 'reps'), exercise('Remo con barra', 3, 8, 12),
+    exercise('Face pull', 3, 12, 15, 'peso', 1), exercise('Curl martillo', 3, 10, 12, 'peso', 1)] },
+  { key: 'gym4', cat: 'gym', emoji: '🦵', name: 'Gym · Pierna', sub: 'Cuádriceps, glúteo y femoral', ex: () => [
+    exercise('Sentadilla', 4, 6, 10), exercise('Prensa de piernas', 3, 10, 15, 'peso', 5), exercise('Hip thrust', 3, 8, 12),
+    exercise('Curl femoral', 3, 10, 15), exercise('Elevación de gemelos', 4, 12, 20)] },
+  { key: 'gym5', cat: 'gym', emoji: '💥', name: 'Gym · Torso', sub: 'Para hacer torso / pierna 4 días', ex: () => [
+    exercise('Press banca', 4, 6, 10), exercise('Remo con barra', 4, 6, 10), exercise('Press militar', 3, 8, 12),
+    exercise('Jalón al pecho', 3, 8, 12), exercise('Curl de bíceps', 2, 10, 15, 'peso', 1), exercise('Extensión de tríceps', 2, 10, 15, 'peso', 1)] },
+  { key: 'cali1', cat: 'cali', emoji: '🤸', name: 'Calistenia · Base', sub: 'Para empezar o volver a coger el ritmo', ex: () => [
     exercise('Flexiones', 3, 8, 15, 'reps'), exercise('Dominadas australianas', 3, 6, 12, 'reps'), exercise('Fondos en banco', 3, 8, 15, 'reps'),
     exercise('Sentadillas', 3, 15, 25, 'reps'), exercise('Plancha', 3, 0, 0, 'seg'), exercise('Hollow hold', 3, 0, 0, 'seg')] },
-  { key: 'cali2', emoji: '💪', name: 'Calistenia · Empuje', sub: 'Pecho, hombro y tríceps', ex: () => [
+  { key: 'cali2', cat: 'cali', emoji: '💪', name: 'Calistenia · Empuje', sub: 'Pecho, hombro y tríceps', ex: () => [
     exercise('Fondos en paralelas', 4, 6, 12, 'reps'), exercise('Flexiones diamante', 3, 8, 15, 'reps'), exercise('Pike push-ups', 3, 6, 12, 'reps'),
     exercise('Flexiones arqueras', 3, 4, 8, 'reps'), exercise('Pino contra la pared', 3, 0, 0, 'seg')] },
-  { key: 'cali3', emoji: '🧗', name: 'Calistenia · Tirón', sub: 'Espalda y bíceps', ex: () => [
+  { key: 'cali3', cat: 'cali', emoji: '🧗', name: 'Calistenia · Tirón', sub: 'Espalda y bíceps', ex: () => [
     exercise('Dominadas', 4, 4, 10, 'reps'), exercise('Chin-ups', 3, 5, 10, 'reps'), exercise('Remo invertido', 3, 8, 15, 'reps'),
     exercise('Elevación de piernas colgado', 3, 6, 12, 'reps'), exercise('Colgarse de la barra', 3, 0, 0, 'seg')] },
-  { key: 'cali4', emoji: '🦵', name: 'Calistenia · Piernas y core', sub: 'Sin máquinas', ex: () => [
+  { key: 'cali4', cat: 'cali', emoji: '🦵', name: 'Calistenia · Piernas y core', sub: 'Sin máquinas', ex: () => [
     exercise('Sentadilla búlgara', 3, 8, 12, 'reps'), exercise('Pistol squat asistida', 3, 4, 8, 'reps'), exercise('Zancadas con salto', 3, 8, 12, 'reps'),
     exercise('Puente de glúteo a una pierna', 3, 8, 15, 'reps'), exercise('L-sit', 3, 0, 0, 'seg'), exercise('Dragon flag negativas', 3, 3, 6, 'reps')] },
-  { key: 'cali5', emoji: '⭐', name: 'Calistenia · Skills', sub: 'Trucos: muscle-up, front lever, pino…', ex: () => [
+  { key: 'cali5', cat: 'cali', emoji: '⭐', name: 'Calistenia · Skills', sub: 'Trucos: muscle-up, front lever, pino…', ex: () => [
     exercise('Muscle-up negativas', 3, 3, 6, 'reps'), exercise('Front lever tuck', 4, 0, 0, 'seg'), exercise('Back lever tuck', 3, 0, 0, 'seg'),
     exercise('Pino libre (intentos)', 5, 0, 0, 'seg'), exercise('Planche lean', 3, 0, 0, 'seg')] },
+  { key: 'cardio1', cat: 'cardio', emoji: '🏃', name: 'Cardio · Correr', sub: 'Una salida: apuntas distancia y tiempo', ex: () => [exercise('Correr', 1, 0, 0, 'run')] },
+  { key: 'cardio2', cat: 'cardio', emoji: '🪢', name: 'Cardio · Comba', sub: 'Rondas de comba y burpees', ex: () => [exercise('Saltar a la comba', 5, 0, 0, 'min'), exercise('Burpees', 3, 8, 12, 'reps')] },
+  { key: 'cardio3', cat: 'cardio', emoji: '🚴', name: 'Cardio · Bici y core', sub: 'Bici estática o de calle + abdomen', ex: () => [exercise('Bici', 1, 0, 0, 'min'), exercise('Plancha', 3, 0, 0, 'seg'), exercise('Abdominales', 3, 15, 25, 'reps')] },
+  { key: 'mov1', cat: 'movilidad', emoji: '🧘', name: 'Movilidad · Estirar', sub: '15 minutos para soltar el cuerpo', ex: () => [
+    exercise('Estiramiento de isquios', 2, 0, 0, 'seg'), exercise('Estiramiento de cadera', 2, 0, 0, 'seg'), exercise('Gato-camello', 2, 8, 12, 'reps'),
+    exercise('Apertura de pecho', 2, 0, 0, 'seg'), exercise('Sentadilla profunda', 2, 0, 0, 'seg')] },
+  { key: 'baile1', cat: 'movilidad', emoji: '💃', name: 'Baile · Técnica', sub: 'Calentar, técnica y coreo', ex: () => [
+    exercise('Cardio de baile', 1, 0, 0, 'min'), exercise('Aislamientos', 3, 0, 0, 'min'), exercise('Giros', 3, 8, 12, 'reps'),
+    exercise('Footwork', 3, 0, 0, 'min'), exercise('Pasadas de coreografía', 4, 1, 3, 'reps'), exercise('Estiramientos de baile', 1, 0, 0, 'min')] },
 ];
 const reward = (name, cost) => ({ id: uid(), name, cost });
 const defaultRewards = () => [
@@ -579,6 +616,28 @@ async function publishProfile() {
     if (!error || !missingColumn(error)) { if (!error && (ui.profileExtras !== withExtras || ui.prevCols !== withPrev)) { ui.profileExtras = withExtras; ui.prevCols = withPrev; render(); } break; }
   }
   if (missingTable(error)) { ui.rankingState = 'missing'; render(); }
+  if (!error) publishRoutines();
+}
+// Rutinas compartidas: cada uno publica las suyas (sin «Otros ejercicios») para que los demás puedan copiarlas
+const routineSig = r => r.name + '|' + r.exercises.map(x => x.name + x.sets + x.repMin + x.repMax).join(',');
+const DEFAULT_SIGS = new Set(defaultRoutines().map(routineSig));   // las que trae la app sin tocar no se comparten (las tiene todo el mundo)
+const shareableRoutines = () => S.shareRoutines === false ? [] : S.routines.filter(r => !r.other && r.exercises.length && !DEFAULT_SIGS.has(routineSig(r))).slice(0, 15)
+  .map(r => ({ name: r.name.slice(0, 40), ex: r.exercises.slice(0, 15).map(x => ({ name: x.name, kind: x.kind, sets: x.sets, repMin: x.repMin, repMax: x.repMax, step: x.step, startKg: x.startKg || null })) }));
+let routinesSent = '';
+async function publishRoutines() {
+  if (!cloud.user || ui.routinesCol === false) return;
+  const list = shareableRoutines(), key = JSON.stringify(list);
+  if (key === routinesSent) return;
+  const { error } = await cloud.client.from('profiles').update({ routines: list }).eq('user_id', cloud.user.id);
+  if (error && missingColumn(error)) ui.routinesCol = false; else if (!error) routinesSent = key;
+}
+async function loadSharedRoutines() {
+  if (!cloud.user || ui.routinesCol === false || ui.sharedLoading) return;
+  ui.sharedLoading = true;
+  const { data, error } = await cloud.client.from('profiles').select('user_id,name,color,routines').limit(200);
+  ui.sharedLoading = false;
+  if (error) { if (missingColumn(error)) { ui.routinesCol = false; render(); } return; }
+  ui.sharedRoutines = data || []; render();
 }
 let rankingTimer = null;
 async function loadRanking() {
@@ -1262,6 +1321,7 @@ function viewPlayer() {
       <p class="hint num">${r.xp} XP en total.</p></section>
     <section class="panel"><h3>Objetos <span class="label">${items.length}/${ITEMS.length}</span></h3>
       ${items.length ? `<div class="mini-items">${items.map(i => `<span title="${i.name}"><img src="${IMG[i.key]}" alt="${i.name}"></span>`).join('')}</div>` : '<p class="hint">Todavía no ha desbloqueado ninguno.</p>'}</section>
+    ${when(!r.me, viewPlayerRoutines(r))}
     ${when(!r.me, `<button class="btn wide ${S.rivals.includes(r.user_id) ? '' : 'dark'} rival-btn" data-act="toggleRival" data-id="${esc(r.user_id)}">${S.rivals.includes(r.user_id) ? '★ Es tu rival · quitar' : '☆ Añadir como rival'}</button>`)}
     ${when(!r.me && cloud.user, viewDuelForm(r))}
     ${r.me ? '<button class="btn wide" data-act="open" data-id="profile">Editar mi perfil</button>'
@@ -1274,6 +1334,13 @@ const ago = iso => {
   if (m < 1) return 'ahora'; if (m < 60) return `hace ${m} min`; const h = Math.round(m / 60); if (h < 24) return `hace ${h} h`;
   const d = Math.round(h / 24); return d === 1 ? 'ayer' : d < 7 ? `hace ${d} días` : new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
 };
+function viewPlayerRoutines(r) {
+  if (!ui.sharedRoutines) { setTimeout(loadSharedRoutines, 0); return ''; }
+  const p = ui.sharedRoutines.find(x => x.user_id === r.user_id);
+  if (!p || !(p.routines || []).length) return '';
+  return html`<section class="panel"><h3>Sus rutinas <span class="label">${p.routines.length}</span></h3><p class="hint">Así entrena ${esc(r.name)}. Copia la que quieras y ajústala a ti.</p>
+    <ul class="pick-list">${p.routines.map((rt, i) => viewSharedRoutine({ user_id: p.user_id, name: p.name, color: p.color, idx: i, routine: rt })).join('')}</ul></section>`;
+}
 function viewDuelCard(d) {
   const rival = duelRival(d), who = (ui.ranking || []).find(r => r.user_id === rival.id) || { name: rival.name, color: '#C7B5FF', user_id: rival.id };
   const me = (ui.ranking || []).find(r => r.user_id === cloud.user.id) || { name: S.name, color: S.color, look: S.look, photo: S.photo };
@@ -1515,12 +1582,29 @@ function viewTraining() {
 }
 function viewRoutineTpl() {
   const have = new Set(S.routines.map(r => r.tpl));
-  return html`<div class="sheet-bg" data-act="closeSheet"></div><section class="sheet" role="dialog" aria-label="Rutinas ya hechas"><div class="sheet-grip"></div>
+  const card = t => { const ex = t.ex(); return `<li><button class="tpl" data-act="addRoutineTpl" data-k="${t.key}" ${have.has(t.key) ? 'disabled' : ''}><span class="tpl-e">${t.emoji}</span><span class="txt"><b>${esc(t.name)}</b><small>${esc(t.sub)} · ${ex.map(x => esc(x.name)).join(', ')}</small></span><span class="tpl-add">${have.has(t.key) ? GLYPH.check : GLYPH.plus}</span></button></li>`; };
+  const cat = ui.tplCat || 'casa', friends = sharedFromFriends();
+  const tabs = [...Object.entries(ROUTINE_CATS), ['amigos', '👥 De tus amigos']].map(([k, t]) => `<button class="chip-btn" data-act="tplCat" data-k="${k}" aria-pressed="${cat === k}">${t}</button>`).join('');
+  const list = cat === 'amigos'
+    ? (friends.length ? `<ul class="pick-list">${friends.map(viewSharedRoutine).join('')}</ul>` : `<p class="hint">${cloud.user ? (ui.routinesCol === false ? 'Para ver las rutinas de tus amigos falta activarlo en Supabase.' : 'Aún no hay rutinas de tus amigos. Cuando creen las suyas, saldrán aquí.') : 'Entra con tu cuenta para ver las rutinas de tus amigos.'}</p>`)
+    : `<ul class="pick-list">${ROUTINE_TEMPLATES.filter(t => t.cat === cat).map(card).join('')}</ul>`;
+  return html`<div class="sheet-bg" data-act="closeSheet"></div><section class="sheet" role="dialog" aria-label="Añadir rutina"><div class="sheet-grip"></div>
     <div class="edit-row spread"><h3>Añadir rutina</h3><button class="btn ghost" data-act="closeSheet">Cerrar</button></div>
     <form class="adde" data-form="addRoutine"><input name="n" autocomplete="off" placeholder="Nombre (ej: Día de piernas)" required maxlength="30" aria-label="Nombre de la nueva rutina"><button class="btn primary">Crear vacía</button></form>
     <span class="label">O elige una ya hecha</span>
-    <ul class="pick-list">${ROUTINE_TEMPLATES.map(t => { const ex = t.ex(); return `<li><button class="tpl" data-act="addRoutineTpl" data-k="${t.key}" ${have.has(t.key) ? 'disabled' : ''}><span class="tpl-e">${t.emoji}</span><span class="txt"><b>${esc(t.name)}</b><small>${esc(t.sub)} · ${ex.map(x => esc(x.name)).join(', ')}</small></span><span class="tpl-add">${have.has(t.key) ? GLYPH.check : GLYPH.plus}</span></button></li>`; }).join('')}</ul>
-    <p class="hint">Después puedes cambiar series, repes o quitar ejercicios tocándolos en la rutina.</p></section>`;
+    <div class="chips tpl-tabs">${tabs}</div>${list}
+    <p class="hint">Después puedes cambiar series, repes o quitar ejercicios desde la rutina.</p></section>`;
+}
+/** Rutinas que comparten los demás (solo de tus rivales si has elegido alguno). */
+function sharedFromFriends() {
+  return (ui.sharedRoutines || []).filter(p => !cloud.user || p.user_id !== cloud.user.id).filter(p => isRival(p.user_id))
+    .flatMap(p => (p.routines || []).map((r, i) => ({ user_id: p.user_id, name: p.name, color: p.color, idx: i, routine: r })));
+}
+function viewSharedRoutine(f) {
+  const r = f.routine, mine = S.routines.some(x => x.from === f.user_id + ':' + r.name);
+  const det = x => esc(x.name) + ' ' + (x.sets || 1) + '×' + (x.kind === 'peso' || x.kind === 'reps' ? (x.repMin === x.repMax ? x.repMax : x.repMin + '-' + x.repMax) : (x.kind === 'run' ? 'km' : x.kind === 'seg' ? 's' : 'min'));
+  return `<li><div class="tpl shared"><span class="tpl-e" style="background:${esc(colorHex(f.color))};color:#111;font-weight:800">${esc((f.name || '?').charAt(0).toUpperCase())}</span><span class="txt"><b>${esc(r.name)}</b><small>de ${esc(f.name)} · ${(r.ex || []).map(det).join(', ')}</small></span>
+    <button class="btn sm ${mine ? '' : 'primary'}" data-act="copyRoutine" data-id="${esc(f.user_id)}" data-k="${f.idx}" ${mine ? 'disabled' : ''}>${mine ? 'La tienes' : 'Copiar'}</button></div></li>`;
 }
 function viewStartPicker() {
   return html`<div class="sheet-bg" data-act="closeSheet"></div><section class="sheet" role="dialog" aria-label="Entrenar ahora"><div class="sheet-grip"></div>
@@ -1621,7 +1705,8 @@ function viewRoutines() {
   return html`<section class="panel"><h3>Rutinas <span class="label">+${XP.record} XP por récord</span></h3>
     ${S.routines.length ? `<ul class="rt-list">${rows}</ul>` : '<p class="hint">No tienes rutinas todavía.</p>'}
     <button class="btn wide" data-act="openRoutineTpl">+ Añadir rutina</button>
-    <p class="hint">Toca una rutina para ver sus ejercicios antes de empezar, o para editarla.</p></section>`;
+    <p class="hint">Toca una rutina para ver sus ejercicios antes de empezar, o para editarla.</p>
+    ${when(cloud.user, `<button class="link-btn" data-act="toggleShareRoutines">${S.shareRoutines === false ? 'Tus rutinas son privadas · compartirlas con tus amigos' : 'Tus amigos pueden ver y copiar tus rutinas · hacerlas privadas'}</button>`)}</section>`;
 }
 /** Pantalla de una rutina: ver qué toca hoy, empezar, apuntarla hecha o editarla. */
 function viewRoutinePage(r) {
@@ -2314,7 +2399,15 @@ const actions = {
   openRoutine: el => { ui.view = 'rt:' + el.dataset.id; ui.editing = false; ui.exForm = null; render(); window.scrollTo(0, 0); },
   moveExercise: el => update(s => { const r = s.routines.find(x => x.id === el.dataset.r), i = r.exercises.findIndex(x => x.id === el.dataset.id), j = i + (+el.dataset.d); if (j < 0 || j >= r.exercises.length) return; [r.exercises[i], r.exercises[j]] = [r.exercises[j], r.exercises[i]]; }, { reward: false }),
   rtOpen: el => { ui.rtOpen = el.dataset.id; ui.exForm = null; render(); },
-  openRoutineTpl: () => { ui.routineTpl = true; render(); },
+  openRoutineTpl: () => { ui.routineTpl = true; render(); loadSharedRoutines(); },
+  tplCat: el => { ui.tplCat = el.dataset.k; render(); },
+  copyRoutine: el => {
+    const p = (ui.sharedRoutines || []).find(x => x.user_id === el.dataset.id), r = p && (p.routines || [])[+el.dataset.k]; if (!r) return;
+    const id = uid(); ui.routineTpl = false; ui.view = 'rt:' + id; ui.editing = false;
+    update(s => { s.routines.push({ id, from: p.user_id + ':' + r.name, name: `${r.name} (de ${p.name})`.slice(0, 40), exercises: (r.ex || []).map(x => Object.assign(exercise(x.name, x.sets || 3, x.repMin || 0, x.repMax || 0, x.kind || 'reps', x.step || 2.5), x.startKg ? { startKg: x.startKg } : {})) }); }, { reward: false });
+    window.scrollTo(0, 0); toast(`Rutina de ${p.name} copiada. Ya es tuya: cámbiala como quieras`);
+  },
+  toggleShareRoutines: () => update(s => { s.shareRoutines = s.shareRoutines === false; }, { reward: false }),
   addRoutineTpl: el => {
     const t = ROUTINE_TEMPLATES.find(x => x.key === el.dataset.k); if (!t || S.routines.some(r => r.tpl === t.key)) return;
     const id = uid(); ui.routineTpl = false; ui.view = 'rt:' + id; ui.editing = false;

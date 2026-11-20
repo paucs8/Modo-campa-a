@@ -995,3 +995,8 @@ button.rchip.add{padding:7px 14px;font-weight:700;font-size:13.5px;border-style:
 .rx-card .hint{margin:0}
 .danger-zone{display:flex;flex-direction:column;gap:4px;align-items:flex-start;border-top:1px solid var(--hairline);padding-top:12px}
 .panel>h3 .btn.sm{margin-left:auto}
+.tpl-tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -18px;padding:0 18px}
+.tpl-tabs::-webkit-scrollbar{display:none}
+.tpl-tabs .chip-btn{flex:none;white-space:nowrap}
+.tpl.shared{align-items:center}
+.tpl.shared .btn{flex:none}
