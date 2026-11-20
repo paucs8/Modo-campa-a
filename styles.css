@@ -590,9 +590,9 @@ body{isolation:isolate}
 .enter .quests li:nth-child(2){animation-delay:.06s}.enter .quests li:nth-child(3){animation-delay:.1s}
 .enter .grid>*{animation:rise .5s var(--ease) both}
 .enter .grid>*:nth-child(2){animation-delay:.05s}.enter .grid>*:nth-child(n+3){animation-delay:.1s}
-.enter .xpbar i,.enter .bar i,.enter .hp i{transform-origin:0 50%;animation:fillbar 1s .25s var(--ease) both, sheen 3.2s 1.2s linear infinite}
-.enter .hero .char{animation:charin .6s .1s var(--spring) both}
-@keyframes rise{from{opacity:.4;transform:translateY(10px)}to{opacity:1;transform:none}}
+.enter .xpbar i,.enter .bar i,.enter .hp i{transform-origin:0 50%;animation:fillbar .55s .1s var(--ease) both, sheen 3.2s 1s linear infinite}
+.enter .hero .char{animation:charin .45s .05s var(--spring) both}
+@keyframes rise{from{transform:translateY(8px)}to{transform:none}}
 @keyframes fillbar{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 @keyframes charin{from{opacity:.3;transform:translateY(18px) scale(.94)}to{opacity:1;transform:none}}
 

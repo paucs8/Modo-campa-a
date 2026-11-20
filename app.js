@@ -1830,11 +1830,13 @@ function enhance() {
     h.insertAdjacentHTML('beforeend', `<span class="fold-chev" aria-hidden="true">${GLYPH.chev}</span>`);
   });
   // Al cambiar de pantalla, los bloques entran escalonados y las barras se llenan
+  // Solo al cambiar tú de pantalla (no al abrir la app, ni cuando se repinta la misma pantalla al llegar datos de la nube:
+  // eso reiniciaba la animación varias veces seguidas y la pantalla daba saltos)
   const key = ui.view;
-  if (fx.view !== key && !reduceMotion()) {
+  if (fx.view !== null && fx.view !== key && !reduceMotion()) {
     app.classList.remove('enter'); void app.offsetWidth; app.classList.add('enter');
-    clearTimeout(fx.t); fx.t = setTimeout(() => app.classList.remove('enter'), 1100);
-  }
+    clearTimeout(fx.t); fx.t = setTimeout(() => app.classList.remove('enter'), 700);
+  } else if (fx.view === key) { app.classList.remove('enter'); clearTimeout(fx.t); }
   // Lo que acabas de completar hace "pop"
   const doneNow = new Set([...app.querySelectorAll('.done[data-pk], .m.done[data-m]')].map(e => e.dataset.pk || 'm' + e.dataset.m));
   if (fx.done && fx.view === key) app.querySelectorAll('.done[data-pk], .m.done[data-m]').forEach(e => { if (!fx.done.has(e.dataset.pk || 'm' + e.dataset.m)) e.classList.add('pop'); });
