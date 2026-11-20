@@ -535,7 +535,7 @@ function schedulePush(delay = 800) {
 async function push() {
   const { error } = await cloud.client.from('saves').upsert({ user_id: cloud.user.id, state: S, updated_at: new Date(stamp(S) || Date.now()).toISOString() });
   cloud.pending = false;
-  if (error) { setSync('error'); setTimeout(() => cloud.user && schedulePush(0), 15000); } else { setSync('cloud'); publishProfile(); }
+  if (error) { ui.syncErr = error.message || String(error.code || 'error'); setSync('error'); setTimeout(() => cloud.user && schedulePush(0), 15000); } else { ui.syncErr = null; setSync('cloud'); publishProfile(); }
 }
 
 /* ---------- Ranking: cada uno publica su perfil y todos ven la tabla ---------- */
@@ -992,7 +992,7 @@ function viewAccount() {
   if (!ui.account) return '';
   if (ui.sync === 'off') return html`<section class="panel nofold"><h3>Sincronización</h3><p class="hint">Falta configurar Supabase. Mientras tanto, todo se guarda en este dispositivo.</p></section>`;
   if (cloud.user) return html`<section class="panel nofold"><h3>Tu cuenta <button class="btn ghost" data-act="toggleAccount">Cerrar</button></h3>
-    <p class="hint">Conectado como <b>${esc(cloud.user.email || '')}</b>. ${SYNC_LABEL[ui.sync]}.</p>
+    <p class="hint">Conectado como <b>${esc(cloud.user.email || '')}</b>. ${SYNC_LABEL[ui.sync]}.</p>${ui.syncErr ? `<p class="hint err">Detalle del error: ${esc(ui.syncErr)}</p><button class="btn" data-act="retrySync">Reintentar ahora</button>` : ''}
     <button class="btn" data-act="open" data-id="profile">Editar perfil y personaje</button>
     <div class="edit-row"><button class="btn" data-act="syncNow">Sincronizar ahora</button><button class="btn danger" data-act="signOut">Cerrar sesión</button></div></section>`;
   return html`<section class="panel nofold"><h3>Tu cuenta <button class="btn ghost" data-act="toggleAccount">Cerrar</button></h3>
@@ -2133,6 +2133,7 @@ const actions = {
   },
   installApp: async () => { if (!installPrompt) return; installPrompt.prompt(); try { await installPrompt.userChoice; } catch (e) { /* cancelado */ } installPrompt = null; render(); },
   hideInstall: () => { try { localStorage.setItem('modo-campana-instalar', 'no'); } catch (e) { /* sin almacenamiento */ } render(); toast('Lo tienes en tu perfil, en Avisos, por si cambias de idea'); },
+  retrySync: () => { if (cloud.user) { toast('Reintentando…'); schedulePush(0); } },
   pushOn: () => enablePush(),
   pushOff: () => disablePush(),
   pushKind: el => { const k = el.dataset.k; avisos.kinds = avisos.kinds.includes(k) ? avisos.kinds.filter(x => x !== k) : [...avisos.kinds, k]; savePushLocal(); pushSync(true); render(); },
