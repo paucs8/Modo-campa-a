@@ -139,6 +139,55 @@ function defaultCampaigns() {
     ] },
   ];
 }
+// Campañas ya montadas para elegir (además de Físico y Carnet)
+const TEMPLATES = [
+  { key: 'ahorro', emoji: '💰', name: 'Ahorrar', sub: 'Juntar dinero para algo que quieres', icon: 'money', color: 'lime', levels: () => [
+    level('Primeros pasos', [mission('Decidir para qué ahorro y cuánto', 20), count('Apuntar todos los gastos (días)', 40, 7), mission('Separar el ahorro en una cuenta o hucha aparte', 30)]),
+    level('Constancia', [count('Semanas ahorrando algo', 60, 4), mission('Quitar una suscripción que no uso', 30), mission('Llegar al 25% del objetivo', 50)]),
+    level('Media partida', [mission('Llegar al 50% del objetivo', 80), count('Días sin compras por impulso', 60, 30)]),
+    level('Jefe final', [mission('Llegar al objetivo', 200), mission('Darme un capricho pequeño por conseguirlo', 30)]) ] },
+  { key: 'examen', emoji: '📚', name: 'Aprobar un examen', sub: 'Del temario al aprobado', icon: 'book', color: 'blue', levels: () => [
+    level('Organización', [mission('Apuntar la fecha del examen', 10), mission('Reunir todos los apuntes', 20), mission('Hacer un calendario de estudio', 30)]),
+    level('Estudio', [count('Sesiones de 45 minutos', 80, 20), mission('Resumen de cada tema', 50), count('Repasos de temas', 50, 10)]),
+    level('Práctica', [count('Exámenes de otros años', 60, 5), mission('Explicar un tema en voz alta sin mirar', 40)]),
+    level('Jefe final', [mission('Aprobar el examen', 250)]) ] },
+  { key: 'leer', emoji: '📖', name: 'Leer más', sub: 'Coger el hábito de leer', icon: 'book', color: 'pink', levels: () => [
+    level('Arranque', [mission('Elegir los próximos 3 libros', 20), count('Días leyendo 10 minutos', 40, 7)]),
+    level('Hábito', [mission('Terminar el primer libro', 60), count('Días leyendo', 60, 20)]),
+    level('Lector', [count('Libros terminados', 100, 3), mission('Leer un género que nunca leo', 40)]),
+    level('Jefe final', [count('Libros terminados', 200, 10)]) ] },
+  { key: 'movil', emoji: '📵', name: 'Menos móvil', sub: 'Recuperar tiempo y atención', icon: 'heart', color: 'lilac', levels: () => [
+    level('Darse cuenta', [mission('Mirar mi tiempo de pantalla real', 10), mission('Quitar notificaciones que no necesito', 30), count('Noches con el móvil fuera del cuarto', 40, 3)]),
+    level('Control', [count('Días sin redes sociales', 60, 3), count('Días con menos de 2 h de pantalla', 60, 7)]),
+    level('Libre', [mission('Borrar la app que más tiempo me quita (una semana)', 60), count('Días con menos de 2 h de pantalla', 100, 21)]),
+    level('Jefe final', [mission('Un mes con menos de 2 h al día', 200)]) ] },
+  { key: 'baile', emoji: '💃', name: 'Baile', sub: 'Mejorar técnica y aprender coreos', icon: 'heart', color: 'pink', levels: () => [
+    level('Base', [count('Clases o vídeos de técnica', 50, 5), count('Días estirando después de bailar', 30, 5), mission('Grabarme bailando para verme', 20)]),
+    level('Coreos', [count('Coreos aprendidas enteras', 80, 3), count('Prácticas de 30 minutos', 80, 15)]),
+    level('Escenario', [mission('Bailar delante de alguien', 60), mission('Probar una clase de otro estilo', 40)]),
+    level('Jefe final', [mission('Crear y grabar una coreo propia', 200)]) ] },
+  { key: 'correr', emoji: '🏃', name: 'Correr 5 km', sub: 'De cero a 5 km sin parar', icon: 'flag', color: 'orange', levels: () => [
+    level('Arranque', [count('Salidas de correr y andar 20 min', 60, 6)]),
+    level('Base', [mission('Correr 2 km sin parar', 50), mission('Correr 3 km sin parar', 70)]),
+    level('Ritmo', [mission('Correr 4 km sin parar', 80), count('Salidas a correr', 80, 15)]),
+    level('Jefe final', [mission('Correr 5 km sin parar', 200), mission('Apuntarme a una carrera popular', 60)]) ] },
+  { key: 'idioma', emoji: '🗣️', name: 'Aprender un idioma', sub: 'Constancia y perder la vergüenza', icon: 'book', color: 'blue', levels: () => [
+    level('Arranque', [mission('Elegir app, curso o profe', 20), count('Días practicando 10 minutos', 50, 7)]),
+    level('Base', [count('Días practicando', 80, 30), count('Capítulos de serie en ese idioma', 40, 5)]),
+    level('Conversación', [mission('Primera conversación de 5 minutos', 80), count('Conversaciones', 80, 5)]),
+    level('Jefe final', [mission('Aprobar un examen de nivel o hablar 15 minutos seguidos', 250)]) ] },
+  { key: 'skate', emoji: '🛹', name: 'Skate', sub: 'Trucos nuevos y clips', icon: 'star', color: 'orange', levels: () => [
+    level('Base', [mission('Ollie limpio y alto', 40), mission('Shove-it', 40), count('Sesiones de skate', 50, 5)]),
+    level('Trucos', [count('Intentos de kickflip', 60, 100), mission('Primer kickflip aterrizado', 80), mission('Bajar un bordillo o escalón', 50)]),
+    level('Clips', [mission('Grabar una línea de 3 trucos', 60), count('Sesiones de skate', 80, 20)]),
+    level('Jefe final', [mission('Editar un clip y compartirlo', 200)]) ] },
+  { key: 'cocina', emoji: '🍳', name: 'Aprender a cocinar', sub: 'Comer mejor y sin depender de nadie', icon: 'heart', color: 'lime', levels: () => [
+    level('Básicos', [count('Recetas sencillas hechas', 50, 5), mission('Hacer la compra de la semana con lista', 30)]),
+    level('Variedad', [count('Días cocinando en casa', 80, 12), count('Platos nuevos', 60, 5)]),
+    level('Chef', [mission('Preparar comida para toda la semana (táper)', 60), mission('Cocinar un plato de otro país', 40)]),
+    level('Jefe final', [mission('Hacer una cena para amigos', 200)]) ] },
+];
+const fromTemplate = t => ({ id: uid(), tpl: t.key, name: t.name, icon: t.icon, color: t.color, sub: t.sub, levels: t.levels() });
 function defaultRoutines() {
   return [
     { id: uid(), name: 'En casa', exercises: [exercise('Flexiones', 3, 8, 15, 'reps'), exercise('Sentadillas', 3, 15, 25, 'reps'), exercise('Fondos en silla', 3, 8, 15, 'reps'), exercise('Plancha', 3, 0, 0, 'seg')] },
@@ -901,8 +950,9 @@ function avatar(r) {
 
 function viewOnboarding() {
   const starters = [
-    { id: 'fisico', title: 'Físico', sub: 'Peso, entrenos y rutinas con progresión' },
-    { id: 'carnet', title: 'Carnet de conducir', sub: 'Del papeleo al examen práctico' },
+    { id: 'fisico', title: '💪 Físico', sub: 'Peso, entrenos y rutinas con progresión' },
+    { id: 'carnet', title: '🚗 Carnet de conducir', sub: 'Del papeleo al examen práctico' },
+    ...TEMPLATES.map(t => ({ id: t.key, title: `${t.emoji} ${t.name}`, sub: t.sub })),
   ];
   return html`<section class="hero onb-hero" ${heroStyle()}>${viewAxis('happy')}
     <div class="hero-txt"><h1>Modo Campaña</h1>
@@ -1250,12 +1300,17 @@ function viewInventory() {
   })}</div><p class="hint inv-hint">Cascos, llavero, handycam y skate se los pone tu personaje. Tócalos para ponérselos o quitárselos.</p></section>`;
 }
 function viewNewCampaign() {
-  return html`<section class="panel"><h3>Nueva campaña</h3>
+  const have = new Set(S.campaigns.map(c => c.tpl || c.id));
+  const base = defaultCampaigns().filter(c => !have.has(c.id)).map(c => ({ key: c.id, emoji: c.id === 'carnet' ? '🚗' : '💪', name: c.name, sub: c.sub, levels: () => c.levels, base: true }));
+  const list = [...base, ...TEMPLATES.filter(t => !have.has(t.key))];
+  return html`<section class="panel new-camp"><h3>Nueva campaña</h3>
+    ${list.length ? html`<span class="label">Elige una ya montada</span><ul class="tpl-list">${list.map(t => `<li><button class="tpl" data-act="addTemplate" data-k="${t.key}"><span class="tpl-e">${t.emoji}</span><span class="txt"><b>${esc(t.name)}</b><small>${esc(t.sub)} · ${t.levels().length} niveles</small></span><span class="tpl-add">${GLYPH.plus}</span></button></li>`).join('')}</ul>` : ''}
+    <span class="label">O créala desde cero</span>
     <input id="nc-name" placeholder="Ej: Ahorrar 3.000 €" maxlength="40">
     <div class="icons">${Object.keys(ICONS).map(k => `<button data-act="pickIcon" data-k="${k}" aria-pressed="${k === ui.newIcon}" aria-label="${k}">${ICONS[k]}</button>`)}</div>
     <div class="swatches">${COLORS.map(k => `<button data-act="pickColor" data-k="${k}" aria-pressed="${k === ui.newColor}" aria-label="Color ${k}" style="background:var(--${k})"></button>`)}</div>
     <div class="edit-row"><button class="btn primary" data-act="createCampaign">Crear campaña</button><button class="btn ghost" data-act="toggleNewCampaign">Cancelar</button></div>
-    <p class="hint">Se crea con un nivel vacío y la abres en modo edición para añadir misiones.</p></section>`;
+    <p class="hint">Las ya montadas las puedes editar después: cambiar misiones, añadir niveles… Las de cero empiezan con un nivel vacío.</p></section>`;
 }
 function viewHome() {
   return viewHero() + viewDaily() + viewMyVouchers(true) + viewDuels() + viewRankTeaser() + viewFeed(3) + viewWeek() + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
@@ -1642,8 +1697,6 @@ function render() {
   nav.innerHTML = viewNav();
   enhance();
   window.scrollTo(0, y);
-  const name = document.getElementById('nc-name');
-  if (name && !name.value) name.focus();
 }
 
 // ---------- Detalles visuales tras pintar: paneles plegables, animaciones de entrada y de "hecho" ----------
@@ -1874,9 +1927,17 @@ const actions = {
   deleteLevel: (el, ev) => { ev.preventDefault(); const c = findCampaign(el.dataset.c); confirmTwice(el.dataset.id, () => { c.levels = c.levels.filter(x => x.id !== el.dataset.id); }); },
 
   // Campañas
-  toggleNewCampaign: repaint(() => { ui.addingCampaign = !ui.addingCampaign; }),
+  toggleNewCampaign: () => { ui.addingCampaign = !ui.addingCampaign; render(); const p = document.querySelector('.new-camp'); if (p) p.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
   pickIcon: el => { ui.newIcon = el.dataset.k; document.querySelectorAll('.icons button').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === ui.newIcon)); },
   pickColor: el => { ui.newColor = el.dataset.k; document.querySelectorAll('.swatches button').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === ui.newColor)); },
+  addTemplate: el => {
+    const k = el.dataset.k, t = TEMPLATES.find(x => x.key === k), base = defaultCampaigns().find(c => c.id === k);
+    const c = t ? fromTemplate(t) : base;
+    if (!c) return;
+    Object.assign(ui, { addingCampaign: false, view: c.id, editing: false });
+    update(s => { if (!s.campaigns.some(x => x.id === c.id)) s.campaigns.push(c); }, { reward: false });
+    window.scrollTo(0, 0); toast(`${t ? t.emoji : '✨'} Campaña «${c.name}» lista. ¡A por el nivel 1!`);
+  },
   createCampaign: () => {
     const input = document.getElementById('nc-name'), name = input.value.trim();
     if (!name) { input.focus(); return; }
@@ -2148,6 +2209,7 @@ const forms = {
     update(s => {
       s.name = name.slice(0, 24); s.onboarded = true;
       s.campaigns = s.campaigns.filter(c => ui.onboardCamps[c.id] !== false);
+      TEMPLATES.filter(t => ui.onboardCamps[t.key] && !s.campaigns.some(c => c.tpl === t.key)).forEach(t => s.campaigns.push(fromTemplate(t)));
     }, { reward: false });
     ui.view = 'profile'; render(); window.scrollTo(0, 0);
     toast(`¡Bienvenido, ${name}! Ahora hazte tu personaje`);
