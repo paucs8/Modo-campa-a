@@ -63,7 +63,7 @@ const ITEMS = [
   { key: 'skate', name: 'Skate', level: 8, wearable: true },
   { key: 'chestOpen', name: 'Cofre de oro', level: 10 },
 ];
-const XP = { train: 5, record: 10 };
+const XP = { train: 5, record: 10, daily: 2 };
 // Monedas: desde el 21/11/2026 se ganan más despacio (lo de antes se queda como estaba)
 const COINS = { train: 2, record: 5, missionShare: 0.3 };
 const COINS_OLD = { train: 3, missionShare: 0.5 }, COINS_CUTOFF = '2026-11-21', COINS_CUTOFF_MS = new Date(COINS_CUTOFF + 'T00:00').getTime();
@@ -300,7 +300,7 @@ function migrate(s) {
   delete s.look.preset; delete s.look.star;
   s.look = Character.upgrade(s.look); // personaje por capas (v2)
   // Armario especial, semanas ganadas, cierre del lunes visto y cañas enviadas
-  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {}; s.feedSent = s.feedSent || {}; s.shields = s.shields || 0; s.shielded = s.shielded || []; s.coinLog = s.coinLog || []; s.duelsSettled = s.duelsSettled || {}; s.duelBase = s.duelBase || {}; s.vouchersDone = s.vouchersDone || {}; s.rivals = s.rivals || []; s.passed = s.passed || {}; if (s.rivalsOnly === undefined) s.rivalsOnly = true;
+  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {}; s.feedSent = s.feedSent || {}; s.shields = s.shields || 0; s.shielded = s.shielded || []; s.coinLog = s.coinLog || []; s.duelsSettled = s.duelsSettled || {}; s.duelBase = s.duelBase || {}; s.vouchersDone = s.vouchersDone || {}; s.rivals = s.rivals || []; s.dailyItems = s.dailyItems || []; s.dailyDone = s.dailyDone || {}; s.passed = s.passed || {}; if (s.rivalsOnly === undefined) s.rivalsOnly = true;
   if (s.photo === undefined) s.photo = null;
   s.v = 5;
   return s;
@@ -373,7 +373,17 @@ function currentLevelIndex(c) {
   return i < 0 ? c.levels.length - 1 : i;
 }
 function totalXP() {
-  return S.train.length * XP.train + totalRecords() * XP.record + allMissions().filter(isDone).reduce((a, m) => a + m.xp, 0) + chestTotals().xp;
+  return S.train.length * XP.train + totalRecords() * XP.record + allMissions().filter(isDone).reduce((a, m) => a + m.xp, 0) + chestTotals().xp + dailyItemsXP();
+}
+// ---------- Cada día: cosas propias que hacer o tomar a diario (pastilla, creatina, apuntar la comida…) ----------
+const DAILY_PRESETS = [['💊', 'Tomar la pastilla'], ['🥤', 'Tomar la creatina'], ['🍽️', 'Apuntar lo que como'], ['💧', 'Beber 2 litros de agua'], ['🍊', 'Vitaminas'], ['🧴', 'Skincare'], ['📖', 'Leer 10 minutos'], ['🦷', 'Hilo dental']];
+const DAILY_EMOJIS = ['💊', '🥤', '🍽️', '💧', '🍊', '🧴', '📖', '🦷', '🧘', '🚶', '😴', '✍️', '🎸', '🌱'];
+/** Cada cosa diaria da un poco de XP (como mucho 5 al día cuentan), para que se note sin poder abusar. */
+function dailyItemsXP() { return Object.values(S.dailyDone).reduce((a, ids) => a + Math.min(5, ids.length) * XP.daily, 0); }
+function dailyItemStreak(id) {
+  const d = new Date(); if (!(S.dailyDone[today()] || []).includes(id)) d.setDate(d.getDate() - 1);
+  let n = 0; while ((S.dailyDone[dateKey(d)] || []).includes(id)) { n++; d.setDate(d.getDate() - 1); }
+  return n;
 }
 function levelOf(xp) { let L = 1; while (xpForLevel(L + 1) <= xp) L++; return L; }
 function streak() {
@@ -775,7 +785,9 @@ const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
 const b64ToBytes = b64 => { const s = atob((b64 + '='.repeat((4 - b64.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(s, ch => ch.charCodeAt(0)); };
 const allDailyDone = () => dailyQuests().every(q => questDone(q));
 function pushRow() {
-  return { endpoint: avisos.endpoint, user_id: cloud.user.id, hour: avisos.hour, hour2: avisos.hour2 === avisos.hour ? null : avisos.hour2, kinds: avisos.kinds, rivals: S.rivals, done_day: allDailyDone() ? today() : null, updated_at: new Date().toISOString() };
+  const row = { endpoint: avisos.endpoint, user_id: cloud.user.id, items: S.dailyItems.filter(i => i.hour != null).map(i => ({ n: `${i.emoji} ${i.name}`, h: i.hour, d: (S.dailyDone[today()] || []).includes(i.id) ? today() : null })), hour: avisos.hour, hour2: avisos.hour2 === avisos.hour ? null : avisos.hour2, kinds: avisos.kinds, rivals: S.rivals, done_day: allDailyDone() ? today() : null, updated_at: new Date().toISOString() };
+  if (ui.pushItemsCol === false) delete row.items;   // tabla sin la columna nueva
+  return row;
 }
 async function enablePush() {
   if (!cloud.user) { toast('Entra con tu cuenta para activar los avisos'); return; }
@@ -787,7 +799,8 @@ async function enablePush() {
     const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CONFIG.vapidPublicKey) });
     const j = sub.toJSON();
     avisos.endpoint = sub.endpoint; savePushLocal();
-    const { error } = await cloud.client.from('push_subs').upsert(Object.assign(pushRow(), { p256dh: j.keys.p256dh, auth: j.keys.auth }));
+    let { error } = await cloud.client.from('push_subs').upsert(Object.assign(pushRow(), { p256dh: j.keys.p256dh, auth: j.keys.auth }));
+    if (error && missingColumn(error) && ui.pushItemsCol !== false) { ui.pushItemsCol = false; ({ error } = await cloud.client.from('push_subs').upsert(Object.assign(pushRow(), { p256dh: j.keys.p256dh, auth: j.keys.auth }))); }
     if (error) { toast(missingTable(error) ? 'Falta activar los avisos en Supabase' : 'No se pudieron guardar los avisos'); return; }
     toast('🔔 Avisos activados en este móvil'); render();
   } catch (e) { toast('No se pudieron activar los avisos'); }
@@ -801,10 +814,10 @@ let pushSent = '', pushTimer = null;
 /** Mantiene al día lo que el servidor necesita: si ya has hecho las misiones de hoy, tus rivales y tus preferencias. */
 function pushSync(force) {
   if (!avisos.endpoint || !cloud.user) return;
-  const row = pushRow(), key = JSON.stringify([row.hour, row.hour2, row.kinds, row.rivals, row.done_day]);
+  const row = pushRow(), key = JSON.stringify([row.items, row.hour, row.hour2, row.kinds, row.rivals, row.done_day]);
   if (!force && key === pushSent) return;
   pushSent = key;
-  cloud.client.from('push_subs').update(row).eq('endpoint', avisos.endpoint).then(() => {});
+  cloud.client.from('push_subs').update(row).eq('endpoint', avisos.endpoint).then(({ error }) => { if (error && missingColumn(error) && ui.pushItemsCol !== false) { ui.pushItemsCol = false; pushSent = ''; pushSync(true); } });
 }
 /** Avisa a otro jugador en su móvil (si lo tiene activado y quiere ese tipo de aviso). */
 function notify(to, kind, title, text) {
@@ -1484,6 +1497,22 @@ function viewDaily() {
         : ready ? '<b>¡Cofre listo!</b><small>Has hecho las 3. Ábrelo.</small>' : `<b>Cofre del día</b><small>Completa las 3 misiones para abrirlo</small>`}</div>
       ${when(ready, '<button class="btn dark" data-act="openChest">Abrir</button>')}</div></section>`;
 }
+function viewDailyItems() {
+  const date = logDate(), done = new Set(S.dailyDone[date] || []), items = S.dailyItems, edit = ui.dailyEdit;
+  const form = ui.dailyForm ? html`<div class="di-form"><div class="chips">${DAILY_PRESETS.filter(([, n]) => !items.some(i => i.name === n)).map(([e, n]) => `<button class="chip-btn" data-act="dailyPreset" data-k="${esc(e + '|' + n)}">${e} ${esc(n)}</button>`).join('')}</div>
+      <div class="emoji-row">${DAILY_EMOJIS.map(e => `<button data-act="dailyEmoji" data-k="${e}" aria-pressed="${ui.dailyForm.emoji === e}">${e}</button>`).join('')}</div>
+      <div class="inrow"><input id="di-name" autocomplete="off" maxlength="40" placeholder="Ej: Tomar la pastilla" value="${esc(ui.dailyForm.name || '')}"></div>
+      <label class="fld inline"><span>Avisarme a las</span><select id="di-hour"><option value="">Sin aviso</option>${Array.from({ length: 18 }, (_, i) => i + 6).map(h => `<option value="${h}" ${ui.dailyForm.hour === h ? 'selected' : ''}>${h}:00</option>`).join('')}</select></label>
+      <div class="edit-row"><button class="btn primary" data-act="dailySave">Añadir</button><button class="btn ghost" data-act="dailyForm">Cancelar</button></div></div>` : '';
+  if (!items.length && !ui.dailyForm) return html`<section class="daily-items empty"><div class="edit-row spread"><h2 class="sec-t">Cada día</h2></div>
+    <button class="teaser" data-act="dailyForm"><span class="teaser-ico">💊</span><span class="txt"><b>Lo que haces cada día</b><small>Una pastilla, la creatina, apuntar la comida… Márcalo cada día y no se te olvida.</small></span><span class="go">${GLYPH.plus}</span></button></section>`;
+  const n = items.filter(i => done.has(i.id)).length;
+  return html`<section class="daily-items"><div class="edit-row spread"><h2 class="sec-t">Cada día</h2><span class="label num">${n}/${items.length}</span>
+      <button class="btn ghost sm" data-act="dailyEdit">${edit ? 'Listo' : 'Editar'}</button></div>
+    <ul class="quests">${items.map(i => { const ok = done.has(i.id), st = dailyItemStreak(i.id);
+      return `<li><button class="quest di ${ok ? 'done' : ''}" data-pk="d-${i.id}" ${edit ? '' : `data-act="dailyToggle" data-id="${i.id}"`}><span class="check">${ok ? GLYPH.check : `<span class="di-e">${i.emoji || '✅'}</span>`}</span><span class="txt"><b>${esc(i.name)}</b><small>${st > 1 ? `🔥 ${st} días seguidos` : st === 1 ? 'Racha de 1 día' : 'Empieza la racha hoy'}${i.hour != null ? ` · aviso a las ${i.hour}:00` : ''}</small></span>${edit ? `<span class="di-x" data-act="dailyDelete" data-id="${i.id}" role="button" aria-label="Borrar">${ui.armed === i.id ? '¿Borrar?' : '✕'}</span>` : ''}</button></li>`; }).join('')}</ul>
+    ${form || `<button class="btn add-ex" data-act="dailyForm">+ Añadir algo diario</button>`}</section>`;
+}
 function viewWeek() {
   const trained = new Set(S.train), names = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'], days = weekDays();
   const n = days.filter(d => trained.has(d.key)).length;
@@ -1525,7 +1554,7 @@ function viewNewCampaign() {
     <p class="hint">Las ya montadas las puedes editar después: cambiar misiones, añadir niveles… Las de cero empiezan con un nivel vacío.</p></section>`;
 }
 function viewHome() {
-  return viewInstallCard() + viewHero() + viewWeek() + viewDaily() + viewMyVouchers(true) + viewDuels() + viewRankTeaser() + viewFeed(3) + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
+  return viewInstallCard() + viewHero() + viewWeek() + viewDaily() + viewDailyItems() + viewMyVouchers(true) + viewDuels() + viewRankTeaser() + viewFeed(3) + html`<section class="stack"><h2 class="sec-t">Tus campañas</h2><div class="grid">${S.campaigns.map(viewCampaignCard)}
     <button class="cc add" data-act="toggleNewCampaign">${GLYPH.plus}Nueva campaña</button></div></section>`
     + when(ui.addingCampaign, viewNewCampaign()) + viewInventory();
 }
@@ -2399,6 +2428,20 @@ const actions = {
   openRoutine: el => { ui.view = 'rt:' + el.dataset.id; ui.editing = false; ui.exForm = null; render(); window.scrollTo(0, 0); },
   moveExercise: el => update(s => { const r = s.routines.find(x => x.id === el.dataset.r), i = r.exercises.findIndex(x => x.id === el.dataset.id), j = i + (+el.dataset.d); if (j < 0 || j >= r.exercises.length) return; [r.exercises[i], r.exercises[j]] = [r.exercises[j], r.exercises[i]]; }, { reward: false }),
   rtOpen: el => { ui.rtOpen = el.dataset.id; ui.exForm = null; render(); },
+  dailyForm: () => { ui.dailyForm = ui.dailyForm ? null : { emoji: '💊', name: '', hour: null }; render(); const i = document.getElementById('di-name'); if (i) i.focus(); },
+  dailyPreset: el => { const [e, n] = el.dataset.k.split('|'); Object.assign(ui.dailyForm, { emoji: e, name: n }); render(); },
+  dailyEmoji: el => { const i = document.getElementById('di-name'); ui.dailyForm.name = i ? i.value : ui.dailyForm.name; ui.dailyForm.emoji = el.dataset.k; render(); },
+  dailySave: () => {
+    const name = (document.getElementById('di-name').value || '').trim(), h = document.getElementById('di-hour').value;
+    if (!name) { toast('Escribe qué tienes que hacer'); return; }
+    const item = { id: uid(), name: name.slice(0, 40), emoji: ui.dailyForm.emoji || '✅', hour: h === '' ? null : +h };
+    ui.dailyForm = null;
+    update(s => { s.dailyItems.push(item); }, { reward: false });
+    toast(item.hour != null ? `Añadido. ${avisos.endpoint ? `Te avisaré a las ${item.hour}:00 si no lo has marcado` : 'Activa los avisos en tu perfil para que te recuerde'}` : 'Añadido a «Cada día»');
+  },
+  dailyToggle: el => update(s => { const d = logDate(), list = (s.dailyDone[d] = s.dailyDone[d] || []), i = list.indexOf(el.dataset.id); if (i >= 0) list.splice(i, 1); else list.push(el.dataset.id); if (!list.length) delete s.dailyDone[d]; }),
+  dailyEdit: () => { ui.dailyEdit = !ui.dailyEdit; ui.dailyForm = null; render(); },
+  dailyDelete: el => confirmTwice(el.dataset.id, s => { s.dailyItems = s.dailyItems.filter(i => i.id !== el.dataset.id); }),
   openRoutineTpl: () => { ui.routineTpl = true; render(); loadSharedRoutines(); },
   tplCat: el => { ui.tplCat = el.dataset.k; render(); },
   copyRoutine: el => {

@@ -58,6 +58,13 @@ Deno.serve(async req => {
         url: './', tag: 'reminder',
       });
     }
+    // Recordatorios de «Cada día» (pastilla, creatina…) a la hora que eligió cada uno, si aún no lo ha marcado hoy
+    const { data: withItems } = await admin.from('push_subs').select('*').contains('items', [{ h: hour }]);
+    for (const s of (withItems || []) as (Sub & { items: { n: string; h: number; d: string | null }[] })[]) {
+      const due = (s.items || []).filter(i => i.h === hour && i.d !== day);
+      if (!due.length) continue;
+      sent += await sendTo([s], { title: due.length === 1 ? `⏰ ${due[0].n}` : `⏰ Te toca: ${due.map(i => i.n).join(', ')}`, body: 'Aún no lo has marcado hoy. Toca para apuntarlo.', url: './', tag: 'daily-' + hour });
+    }
     return json({ ok: true, hour, sent });
   }
 

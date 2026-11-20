@@ -1000,3 +1000,17 @@ button.rchip.add{padding:7px 14px;font-weight:700;font-size:13.5px;border-style:
 .tpl-tabs .chip-btn{flex:none;white-space:nowrap}
 .tpl.shared{align-items:center}
 .tpl.shared .btn{flex:none}
+
+/* Cada día */
+.daily-items{display:flex;flex-direction:column;gap:10px}
+.daily-items .edit-row.spread{gap:8px}
+.daily-items .edit-row.spread .label{margin-left:auto}
+.di .check{display:grid;place-items:center}
+.di-e{font-size:17px;line-height:1}
+.di-x{margin-left:auto;font-size:12px;font-weight:800;color:var(--red);padding:6px 8px;border-radius:999px;border:1.5px solid color-mix(in srgb, var(--red) 50%, transparent);white-space:nowrap}
+.di-form{display:flex;flex-direction:column;gap:10px;background:var(--surface);border:1px solid var(--hairline);border-radius:20px;padding:14px}
+.di-form input,.di-form select{font-size:16px}
+.di-form select{padding:9px 12px;border-radius:12px;border:2px solid var(--soft-line);background:var(--bg);color:var(--ink)}
+.emoji-row{display:flex;flex-wrap:wrap;gap:4px}
+.emoji-row button{width:38px;height:38px;border-radius:12px;border:2px solid transparent;background:var(--bg);font-size:19px}
+.emoji-row button[aria-pressed="true"]{border-color:var(--ink)}

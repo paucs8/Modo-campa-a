@@ -33,3 +33,6 @@ alter table public.push_log enable row level security;
 
 -- Segundo recordatorio del día (por si ya habías creado la tabla antes)
 alter table public.push_subs add column if not exists hour2 int default 13 check (hour2 between 0 and 23);
+
+-- Recordatorios de «Cada día» (pastilla, creatina…): nombre, hora y si ya está hecho hoy
+alter table public.push_subs add column if not exists items jsonb not null default '[]';
