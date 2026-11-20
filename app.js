@@ -466,7 +466,7 @@ const FIRST_TIME = {
 /** Qué toca hoy en un ejercicio: series prerrellenadas y consejo de progresión. */
 function nextSession(x) {
   const last = exerciseStats(x.id).last, sets = Math.max(1, x.sets || 1);
-  if (!last) return { rows: Array.from({ length: sets }, () => blankSet(x)), tip: FIRST_TIME[x.kind](x), levelUp: false };
+  if (!last) return { rows: Array.from({ length: sets }, () => (x.kind === 'peso' && x.startKg ? { kg: String(x.startKg), r: '' } : blankSet(x))), tip: FIRST_TIME[x.kind](x), levelUp: false };
   const copy = () => last.sets.map(s => Object.assign({}, s));
   const allAtTop = last.sets.length >= x.sets && last.sets.every(s => s.r >= x.repMax);
   switch (x.kind) {
@@ -1530,7 +1530,7 @@ function viewQuickLog() {
     <p class="hint">Lo que dejes vacío no se guarda. Los ejercicios nuevos se quedan en «Otros ejercicios» para que veas cómo mejoras.</p></section>`;
 }
 // Formulario de ejercicio: crear o editar, con campos según el tipo
-const KIND_FIELDS = { peso: ['sets', 'reps', 'step'], reps: ['sets', 'reps'], seg: ['sets'], min: ['sets'], run: [] };
+const KIND_FIELDS = { peso: ['sets', 'reps', 'start', 'step'], reps: ['sets', 'reps'], seg: ['sets'], min: ['sets'], run: [] };
 const KIND_SHORT = { peso: 'Peso', reps: 'Repes', seg: 'Segundos', min: 'Minutos', run: 'Carrera' };
 const KIND_HELP = {
   peso: 'Kilos y repes. Cuando hagas todas las series al máximo de repes, te dirá que subas peso.',
@@ -1556,8 +1556,10 @@ function viewExerciseForm(r, x, inSession) {
     <div class="fgrid">
       ${group('sets', field('s', 'Series', x ? x.sets : 3, 1, 10))}
       ${group('reps', field('a', 'Repes mín', x && x.repMin ? x.repMin : 8, 1, 100) + field('b', 'Repes máx', x && x.repMax ? x.repMax : 12, 1, 100))}
-      ${group('step', field('st', 'Subir de kg en kg', x ? x.step : 2.5, 0.5, 20, 0.5))}
+      ${group('start', field('kg0', 'Peso con el que empiezas (kg)', x && x.startKg ? x.startKg : '', 0, 500, 0.5))}
+      ${group('step', field('st', 'Cuánto subir cada vez (kg)', x ? x.step : 2.5, 0.5, 20, 0.5))}
     </div>
+    ${group('step', '<p class="hint">«Cuánto subir» es el salto de peso cuando ya te sale fácil: normalmente 2,5 kg, o 1 kg en mancuernas pequeñas.</p>')}
     ${when(hasHistory, '<p class="hint">Tu historial y tus récords se mantienen aunque cambies el ejercicio.</p>')}
     <div class="edit-row"><button class="btn primary">${x ? 'Guardar' : 'Añadir'}</button><button type="button" class="btn ghost" data-act="closeExerciseForm">Cancelar</button>
       ${when(x && !inSession, confirmBtn('deleteExercise', x ? x.id : '', 'Borrar ejercicio', `type="button" data-r="${r.id}"`))}</div>
@@ -2516,7 +2518,8 @@ const forms = {
       sets: needs.includes('sets') ? Math.min(10, Math.max(1, parseInt(F.s.value, 10) || 3)) : 1,
       repMin: min,
       repMax: needs.includes('reps') ? Math.max(min, parseInt(F.b.value, 10) || 12) : 0,
-      step: needs.includes('step') ? Math.max(0.5, num(F.st.value) || 2.5) : 2.5,
+      step: needs.includes('step') ? Math.min(20, Math.max(0.5, num(F.st.value) || 2.5)) : 2.5,
+      startKg: needs.includes('start') && num(F.kg0.value) > 0 ? num(F.kg0.value) : null,
     };
     const existing = f.dataset.x && r.exercises.find(x => x.id === f.dataset.x);
     ui.exForm = null;
