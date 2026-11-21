@@ -357,6 +357,10 @@ function paint(input, { items = [], closed = false, mood = 'idle' } = {}) {
     guitarra: () => { z = 20; for (let i = 0; i <= 34; i++) set(19 + Math.round(i * 0.7), 36 + i, i % 5 ? [120, 70, 40] : GOLD); },
   }[L.bag] || (() => {}))();
   if (has('llavero')) { z = 22; for (let y = 68; y <= 74; y++) set(41, y, y % 2 ? METAL : [120, 116, 112]); form(75, 80, y => [39, 43], tones(GOLD), 22); set(40, 77, mul(GOLD, 0.6)); set(42, 77, mul(GOLD, 0.6)); }
+  if (has('movil')) { form(64, 73, y => [7, 12], tones([40, 40, 48]), 23, { color: (x, y) => (y > 65 && y < 72 && x > 7 && x < 12 ? (y < 68 ? [120, 200, 255] : [80, 150, 230]) : null) }); form(68, 75, y => [11, 16], skin, 24); }
+  if (has('botella')) { form(60, 76, y => (y < 63 ? [49, 51] : [47, 53]), tones([90, 170, 230]), 24, { color: (x, y) => (y < 62 ? [40, 40, 48] : y === 68 || y === 69 ? WHITE : null) }); form(70, 75, y => [46, 52], skin, 25); }
+  if (has('mancuerna')) { const m = tones([62, 62, 70]); form(62, 66, y => [46, 53], m, 24); form(66, 78, y => [49, 50], tones([160, 160, 166]), 24); form(78, 82, y => [46, 53], m, 24); form(68, 75, y => [47, 52], skin, 25); }
+  if (has('chestOpen')) { form(112, 122, y => [53, 63], tones([150, 96, 40]), 12, { color: (x, y) => (y === 115 ? GOLD : x === 58 && y > 114 && y < 119 ? mul(GOLD, 0.7) : null) }); z = 12; hline(111, 54, 62, GOLD); set(56, 110, tint(GOLD, 0.5)); set(60, 109, tint(GOLD, 0.5)); }
   if (has('handycam')) { form(64, 72, y => [4, 13], tones(DARK), 23); z = 23; hline(66, 5, 9, [110, 106, 104]); set(5, 70, RED); form(61, 63, y => [9, 13], tones(DARK), 23); dots([[3, 67], [3, 68]], METAL); form(68, 75, y => [11, 16], skin, 24); }
 
   // ===== 7. Cabeza =====

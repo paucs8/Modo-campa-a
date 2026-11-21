@@ -55,13 +55,13 @@ const COLORS = ['lilac', 'orange', 'blue', 'lime', 'pink'];
 const RANKS = ['Novato', 'Aprendiz', 'Explorador', 'Veterano', 'Élite', 'Maestro', 'Leyenda'];
 const ITEMS = [
   { key: 'llavero', name: 'Llavero', level: 2, wearable: true },
-  { key: 'botella', name: 'Botella', level: 3 },
+  { key: 'botella', name: 'Botella', level: 3, wearable: true, slot: 'R' },
   { key: 'auriculares', name: 'Cascos', level: 4, wearable: true },
-  { key: 'movil', name: 'Móvil', level: 5 },
-  { key: 'mancuerna', name: 'Mancuerna', level: 6 },
-  { key: 'handycam', name: 'Handycam', level: 7, wearable: true },
+  { key: 'movil', name: 'Móvil', level: 5, wearable: true, slot: 'L' },
+  { key: 'mancuerna', name: 'Mancuerna', level: 6, wearable: true, slot: 'R' },
+  { key: 'handycam', name: 'Handycam', level: 7, wearable: true, slot: 'L' },
   { key: 'skate', name: 'Skate', level: 8, wearable: true },
-  { key: 'chestOpen', name: 'Cofre de oro', level: 10 },
+  { key: 'chestOpen', name: 'Cofre de oro', level: 10, wearable: true },
 ];
 const XP = { train: 5, record: 10, daily: 2 };
 // Monedas: desde el 21/11/2026 se ganan más despacio (lo de antes se queda como estaba)
@@ -99,6 +99,8 @@ const fmt = v => (v == null || v === '' ? '–' : (Math.round(v * 10) / 10).toLo
 const num = v => parseFloat(String(v == null ? '' : v).replace(',', '.'));
 const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const today = () => dateKey(new Date());
+const scroller = () => document.getElementById('scroll') || document.scrollingElement;
+const scrollTop0 = () => { scroller().scrollTop = 0; };
 /** Día en el que se está apuntando: hoy, o ayer/anteayer si se te olvidó apuntar algo. */
 const logDate = () => { const d = new Date(); d.setDate(d.getDate() - (ui.logDay || 0)); return dateKey(d); };
 // Se puede apuntar en cualquier día de esta semana (desde el lunes); ayer siempre, aunque hoy sea lunes
@@ -471,7 +473,12 @@ function mood() {
   if (run >= 2) return { kind: 'idle', line: `Racha de ${run} días en juego. Haz una misión hoy y la salvas.` };
   return { kind: 'idle', line: idle === 1 ? 'Ayer bien. ¿Seguimos hoy?' : '¿Empezamos? Tus misiones de hoy están aquí abajo.' };
 }
-const wearing = () => ITEMS.filter(i => i.wearable && levelOf(totalXP()) >= i.level && !S.unequipped.includes(i.key)).map(i => i.key);
+// Cada mano lleva una sola cosa: si hay dos para la misma mano, se queda la de más nivel (salvo que la hayas quitado)
+const wearing = () => {
+  const L = levelOf(totalXP()), used = {};
+  return ITEMS.filter(i => i.wearable && L >= i.level && !S.unequipped.includes(i.key)).reverse()
+    .filter(i => { if (!i.slot) return true; if (used[i.slot]) return false; used[i.slot] = true; return true; }).reverse().map(i => i.key);
+};
 
 // Jefe final: el último nivel de cada campaña; los niveles anteriores le quitan vida
 function boss(c) {
@@ -970,7 +977,7 @@ function maybeShowRecap() {
     <div class="mini-podium">${order.map(i => `<div class="mp mp${i + 1}"><img src="${Character.image(top[i].look || Character.BASE, { items: (top[i].look && top[i].look.items) || [], mood: i === 0 ? 'fire' : 'happy' })}" alt=""><span class="mp-block"><b>${i + 1}</b><small class="num">${top[i].last_xp} XP</small></span><span class="mp-name">${esc(top[i].name)}</span></div>`).join('')}</div>
     <p class="hint on-lilac">${pos < 0 ? 'La semana pasada no sumaste XP. Esta semana empieza de cero para todos.' : won ? 'Ya puedes ponerte la corona en tu perfil.' : `Quedaste ${pos + 1}º de ${rows.length}. Esta semana empieza de cero.`}</p>
     <button class="btn dark wide">${won ? 'Ponerme la corona' : 'A por esta semana'}</button></div>`;
-  el.addEventListener('click', () => { el.remove(); if (won) { ui.view = 'profile'; ui.lookTab = 'extras'; render(); window.scrollTo(0, 0); } });
+  el.addEventListener('click', () => { el.remove(); if (won) { ui.view = 'profile'; ui.lookTab = 'extras'; render(); scrollTop0(); } });
   document.body.appendChild(el);
 }
 
@@ -1548,7 +1555,7 @@ function viewInventory() {
     return ok && i.wearable
       ? `<button class="item got ${on ? 'on' : ''}" data-act="toggleWear" data-k="${i.key}" aria-pressed="${on}" aria-label="${on ? 'Quitar' : 'Poner'} ${i.name}">${inner}</button>`
       : `<div class="item ${ok ? 'got' : 'locked'}" title="${ok ? i.name : 'Se desbloquea en el nivel ' + i.level}">${inner}</div>`;
-  })}</div><p class="hint inv-hint">Cascos, llavero, handycam y skate se los pone tu personaje. Tócalos para ponérselos o quitárselos.</p></section>`;
+  })}</div><p class="hint inv-hint">Toca un objeto para que tu personaje se lo ponga o se lo quite. En cada mano lleva una sola cosa.</p></section>`;
 }
 function viewNewCampaign() {
   const have = new Set(S.campaigns.map(c => c.tpl || c.id));
@@ -2034,7 +2041,7 @@ function viewCampaign(c) {
 function render() {
   const campaign = S.campaigns.find(c => c.id === ui.view);
   if (!campaign && !['shop', 'ranking', 'profile', 'player', 'ideas'].includes(ui.view) && !S.routines.some(r => 'rt:' + r.id === ui.view)) ui.view = 'home';
-  const y = window.scrollY;
+  const y = scroller().scrollTop;
   const nav = document.getElementById('nav');
   if (!S.onboarded) {
     document.getElementById('app').innerHTML = viewAccount() + viewOnboarding();
@@ -2047,7 +2054,7 @@ function render() {
     + `<datalist id="ex-list">${COMMON_EXERCISES.map(n => `<option value="${n}">`).join('')}</datalist>`;
   nav.innerHTML = viewNav();
   enhance();
-  window.scrollTo(0, y);
+  scroller().scrollTop = y;
 }
 
 // ---------- Detalles visuales tras pintar: paneles plegables, animaciones de entrada y de "hecho" ----------
@@ -2098,6 +2105,11 @@ function enhance() {
     const step = now => { const t = Math.min(1, (now - t0) / dur), v = Math.round(from + (to - from) * (1 - (1 - t) ** 3)); e.textContent = v; if (t < 1) requestAnimationFrame(step); };
     requestAnimationFrame(step); e.classList.add('bump');
   });
+  // Las hojas que suben desde abajo solo se animan al abrirse, no cada vez que cambias algo dentro
+  const sheet = app.querySelector('.sheet');
+  if (sheet && fx.sheet) { sheet.classList.add('still'); const bg = app.querySelector('.sheet-bg'); if (bg) bg.classList.add('still'); }
+  fx.sheet = !!sheet;
+  document.body.classList.toggle('sheet-open', !!sheet);   // la barra de abajo se esconde mientras hay una hoja abierta
   fx.view = key;
 }
 
@@ -2172,9 +2184,9 @@ const actions = {
     if (!data.session) { ui.authMsg = { ok: true, text: 'Cuenta creada, pero falta confirmarla: abre el correo que te ha llegado, toca el enlace y luego vuelve aquí y dale a Entrar. Si no llega en unos minutos, mira en spam o avisa a Pau.' }; render(); }
     else ui.authMsg = null;
   },
-  open: el => { if (el.dataset.id === 'ranking') loadRanking(); if (el.dataset.id === 'ideas') loadIdeas(); ui.view = el.dataset.id; ui.addingCampaign = false; ui.editing = false; ui.exForm = null; ui.addingReward = false; render(); window.scrollTo(0, 0); },
+  open: el => { if (el.dataset.id === 'ranking') loadRanking(); if (el.dataset.id === 'ideas') loadIdeas(); ui.view = el.dataset.id; ui.addingCampaign = false; ui.editing = false; ui.exForm = null; ui.addingReward = false; render(); scrollTop0(); },
   toggleEditing: repaint(() => { ui.editing = !ui.editing; }),
-  pickLevel: el => { ui.mapSel = ui.mapSel || {}; ui.mapSel[ui.view] = +el.dataset.k; render(); const card = document.querySelector('.map .lv-card'); if (card) { card.classList.add('swap'); if (card.getBoundingClientRect().top > innerHeight - 160) card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } },
+  pickLevel: el => { ui.mapSel = ui.mapSel || {}; ui.mapSel[ui.view] = +el.dataset.k; render(); const card = document.querySelector('.map .lv-card'); if (card) { card.classList.add('swap'); if (card.getBoundingClientRect().top > window.innerHeight - 160) card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } },
   toggleLevel: el => { const card = el.closest('.lv-card'); ui.open[el.dataset.k] = card.dataset.open !== '1'; render(); },
 
   // Misiones
@@ -2242,7 +2254,7 @@ const actions = {
     try { await navigator.clipboard.writeText(text); toast('Copiado. Pégalo en el chat con Claude'); }
     catch { const t = document.getElementById('for-claude'); if (t) { t.focus(); t.select(); } toast('Mantén pulsado el texto y copia'); }
   },
-  openPlayer: el => { ui.playerId = el.dataset.id; ui.view = 'player'; render(); window.scrollTo(0, 0); },
+  openPlayer: el => { ui.playerId = el.dataset.id; ui.view = 'player'; render(); scrollTop0(); },
   shareApp: async () => {
     const url = location.origin + location.pathname, text = `Te reto en Modo Campaña. Hazte una cuenta y a ver quién sube más esta semana: ${url}`;
     try { if (navigator.share) { await navigator.share({ title: 'Modo Campaña', text, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
@@ -2260,6 +2272,12 @@ const actions = {
     if (gold) postFeed('chest', `ha abierto un cofre dorado: +${chest.coins} monedas`, 'chest:' + date);
   },
   toggleWear: el => update(s => {
+    const it = ITEMS.find(i => i.key === el.dataset.k);
+    if (it && it.slot && !wearing().includes(it.key)) {   // al ponerte algo en una mano, se quita lo que llevaras en esa mano
+      s.unequipped = s.unequipped.filter(x => x !== it.key);
+      ITEMS.filter(i => i.slot === it.slot && i.key !== it.key && !s.unequipped.includes(i.key)).forEach(i => s.unequipped.push(i.key));
+      return;
+    }
     const k = el.dataset.k;
     s.unequipped = s.unequipped.includes(k) ? s.unequipped.filter(x => x !== k) : [...s.unequipped, k];
   }, { reward: false }),
@@ -2292,7 +2310,7 @@ const actions = {
     if (!c) return;
     Object.assign(ui, { addingCampaign: false, view: c.id, editing: false });
     update(s => { if (!s.campaigns.some(x => x.id === c.id)) s.campaigns.push(c); }, { reward: false });
-    window.scrollTo(0, 0); toast(`${t ? t.emoji : '✨'} Campaña «${c.name}» lista. ¡A por el nivel 1!`);
+    scrollTop0(); toast(`${t ? t.emoji : '✨'} Campaña «${c.name}» lista. ¡A por el nivel 1!`);
   },
   createCampaign: () => {
     const input = document.getElementById('nc-name'), name = input.value.trim();
@@ -2301,7 +2319,7 @@ const actions = {
     Object.assign(ui, { addingCampaign: false, view: c.id, editing: true });
     ui.open[c.id + c.levels[0].id] = true;
     update(s => s.campaigns.push(c), { reward: false });
-    window.scrollTo(0, 0);
+    scrollTop0();
   },
   deleteCampaign: () => {
     const c = activeCampaign();
@@ -2337,7 +2355,7 @@ const actions = {
     ui.startPick = false; ui.editing = false;
     { const b = S.campaigns.find(c => c.tracker === 'body'); if (b) ui.view = b.id; }
     ui.draft = { routine: r.id, started: Date.now(), cur: 0, restSec: 90, ex: Object.fromEntries(r.exercises.map(x => [x.id, nextSession(x).rows])) };
-    saveDraft(); render(); window.scrollTo(0, 0);
+    saveDraft(); render(); scrollTop0();
   },
   discardSession: () => {
     if (ui.armed !== 'session') { ui.armed = 'session'; render(); return; }
@@ -2441,7 +2459,7 @@ const actions = {
     if (error) { toast('No se pudo reaccionar'); loadFeed(); }
     else if (!mine) notify(f.user_id, 'react', `${e} A ${S.name} le mola tu logro`, `${f.text.charAt(0).toUpperCase() + f.text.slice(1)}`.replace(/^Ha /, 'Has '));
   },
-  openRoutine: el => { ui.view = 'rt:' + el.dataset.id; ui.editing = false; ui.exForm = null; render(); window.scrollTo(0, 0); },
+  openRoutine: el => { ui.view = 'rt:' + el.dataset.id; ui.editing = false; ui.exForm = null; render(); scrollTop0(); },
   moveExercise: el => update(s => { const r = s.routines.find(x => x.id === el.dataset.r), i = r.exercises.findIndex(x => x.id === el.dataset.id), j = i + (+el.dataset.d); if (j < 0 || j >= r.exercises.length) return; [r.exercises[i], r.exercises[j]] = [r.exercises[j], r.exercises[i]]; }, { reward: false }),
   rtOpen: el => { ui.rtOpen = el.dataset.id; ui.exForm = null; render(); },
   dailyForm: () => { ui.dailyForm = ui.dailyForm ? null : { emoji: '💊', name: '', hour: null }; render(); const i = document.getElementById('di-name'); if (i) i.focus(); },
@@ -2483,7 +2501,7 @@ const actions = {
     const p = (ui.sharedRoutines || []).find(x => x.user_id === el.dataset.id), r = p && (p.routines || [])[+el.dataset.k]; if (!r) return;
     const id = uid(); ui.routineTpl = false; ui.view = 'rt:' + id; ui.editing = false;
     update(s => { s.routines.push({ id, from: p.user_id + ':' + r.name, name: `${r.name} (de ${p.name})`.slice(0, 40), exercises: (r.ex || []).map(x => Object.assign(exercise(x.name, x.sets || 3, x.repMin || 0, x.repMax || 0, x.kind || 'reps', x.step || 2.5), x.startKg ? { startKg: x.startKg } : {})) }); }, { reward: false });
-    window.scrollTo(0, 0); toast(`Rutina de ${p.name} copiada. Ya es tuya: cámbiala como quieras`);
+    scrollTop0(); toast(`Rutina de ${p.name} copiada. Ya es tuya: cámbiala como quieras`);
   },
   toggleShareRoutines: () => update(s => { s.shareRoutines = s.shareRoutines === false; }, { reward: false }),
   addRoutineTpl: el => {
@@ -2616,7 +2634,7 @@ const actions = {
       if (s.sessions.length > 600) s.sessions.shift();
       if (!s.train.includes(day)) { s.train.push(day); s.train.sort(); }
     });
-    window.scrollTo(0, 0);
+    scrollTop0();
     sum.records = totalRecords() - recordsBefore; sum.xp = Math.max(0, totalXP() - xpBefore0);
     showWorkoutSummary(sum);
     const mins = Math.round(sum.secs / 60);
@@ -2714,7 +2732,7 @@ const forms = {
       s.campaigns = s.campaigns.filter(c => ui.onboardCamps[c.id] !== false);
       TEMPLATES.filter(t => ui.onboardCamps[t.key] && !s.campaigns.some(c => c.tpl === t.key)).forEach(t => s.campaigns.push(fromTemplate(t)));
     }, { reward: false });
-    ui.view = 'profile'; render(); window.scrollTo(0, 0);
+    ui.view = 'profile'; render(); scrollTop0();
     toast(`¡Bienvenido, ${name}! Ahora hazte tu personaje`);
   },
   sendIdea: async (f, F) => {
@@ -2754,7 +2772,7 @@ const forms = {
   addRoutine: (f, F) => {
     const name = F.n.value.trim(); if (!name) return;
     const id = uid(); ui.routineTpl = false; ui.view = 'rt:' + id; ui.editing = true;
-    update(s => s.routines.push({ id, name, exercises: [] }), { reward: false }); window.scrollTo(0, 0);
+    update(s => s.routines.push({ id, name, exercises: [] }), { reward: false }); scrollTop0();
     toast(`Rutina «${name}» creada. Añádele ejercicios`);
   },
   saveExercise: (f, F) => {

@@ -1018,3 +1018,15 @@ button.rchip.add{padding:7px 14px;font-weight:700;font-size:13.5px;border-style:
 .duel.soon p{margin:0;font-size:14px}
 .day-check{margin:0}
 .day-check .quest.done .txt b{text-decoration:none;opacity:1}
+
+/* La página se desplaza dentro de su propia caja: en iPhone así la barra de abajo no se despega
+   al tirar arriba o abajo del todo (el rebote del navegador movía los elementos fijos) */
+html,body{height:100%;overflow:hidden}
+body{padding:0!important}
+#scroll{position:fixed;inset:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));
+  padding-top:14px;padding-bottom:calc(120px + env(safe-area-inset-bottom, 0px))}
+.sheet.still,.sheet-bg.still{animation:none}
+.tpl-tabs{flex-wrap:wrap!important;overflow:visible!important;margin:0!important;padding:0!important}
+body.sheet-open .nav{opacity:0;pointer-events:none;transform:translate(-50%,140%)}
+.nav{transition:opacity .2s, transform .3s var(--ease)}
