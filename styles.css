@@ -1039,3 +1039,14 @@ body.sheet-open .nav{opacity:0;pointer-events:none;transform:translate(-50%,140%
 .item.locked small{background:rgba(255,255,255,.08);color:#bbb}
 .item em{top:5px;left:auto;right:5px;width:20px;height:20px;padding:0;font-size:0;display:grid;place-items:center;background:#111}
 .item em::after{content:"✓";font-size:12px;font-weight:900;color:var(--lime)}
+
+/* Elegir objeto al subir de nivel */
+.pick-item{display:flex;flex-direction:column;gap:6px;background:linear-gradient(140deg,#3a2a10,#1c1408);border:1px solid rgba(255,190,80,.4);border-radius:18px;padding:12px;margin-bottom:10px}
+.pick-item b{color:#FFD66B;font-size:15px}
+.pick-item small{color:rgba(255,255,255,.7);font-size:12px}
+.pick-opts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:4px 0}
+.pick-opts .item{animation:checkpop .5s var(--spring) both}
+.pick-opts .item:nth-child(2){animation-delay:.08s}.pick-opts .item:nth-child(3){animation-delay:.16s}
+.lv-opts{display:flex;gap:10px;justify-content:center}
+.lv-opts img{width:52px;height:52px;image-rendering:pixelated;background:rgba(255,255,255,.5);border-radius:14px;padding:6px}
+.item.locked img{filter:brightness(0) invert(.35);opacity:.5}

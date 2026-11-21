@@ -61,8 +61,45 @@ const ITEMS = [
   { key: 'mancuerna', name: 'Mancuerna', level: 6, wearable: true, slot: 'R' },
   { key: 'handycam', name: 'Handycam', level: 7, wearable: true, slot: 'L' },
   { key: 'skate', name: 'Skate', level: 8, wearable: true },
-  { key: 'chestOpen', name: 'Cofre de oro', level: 10, wearable: true },
+  { key: 'chestOpen', name: 'Cofre de oro', level: 10, wearable: true, slot: 'P' },
 ];
+// Objetos que se eligen: cada nivel nuevo te deja escoger 1 entre 3 de los que aún no tienes
+const PICK_ITEMS = [
+  { key: 'raqueta', name: 'Raqueta', wearable: true, slot: 'R' },
+  { key: 'pesarusa', name: 'Pesa rusa', wearable: true, slot: 'R' },
+  { key: 'cafe', name: 'Café', wearable: true, slot: 'R' },
+  { key: 'libro', name: 'Libro', wearable: true, slot: 'L' },
+  { key: 'microfono', name: 'Micro', wearable: true, slot: 'L' },
+  { key: 'helado', name: 'Helado', wearable: true, slot: 'L' },
+  { key: 'perro', name: 'Perrito', wearable: true, slot: 'P' },
+  { key: 'gatito', name: 'Gatito', wearable: true, slot: 'P' },
+  { key: 'balon', name: 'Balón', wearable: true, slot: 'P' },
+  { key: 'toalla', name: 'Toalla', wearable: true },
+];
+const ALL_ITEMS = [...ITEMS, ...PICK_ITEMS];
+// Iconos pixel de los objetos nuevos (16×16)
+const ITEM_SPRITES = {
+  raqueta: [['....kkkkkk......', '...kbbbbbbk.....', '..kbwbbwbbbk....', '..kbbbbbbbbk....', '..kbbwbbwbbk....', '..kbbbbbbbbk....', '..kbwbbwbbbk....', '...kbbbbbbk.....', '....kkbbkk......', '......kbk.......', '......kak.......', '......kak.......', '......kak.......', '......kak.......', '.......k........'], { k: '#22202a', b: '#2D5BD7', w: '#dfe8ff', a: '#555' }],
+  pesarusa: [['.....kkkkk......', '....k.....k.....', '...k.......k....', '...k.......k....', '....kkkkkkk.....', '...kgggggggk....', '..kgllgggggggk..', '..kglggggggggk..', '..kgggggggggk...', '..kgggggggggk...', '..kgggggggggk...', '...kgggggggk....', '....kkkkkkk.....'], { k: '#1a1a1e', g: '#3a3a42', l: '#6a6a74' }],
+  cafe: [['....kkkkkk......', '...kddddddk.....', '...kwwwwwwk.....', '...kwwwwwwk.....', '...kbbbbbbk.....', '...kbbbbbbk.....', '...kbbbbbbk.....', '...kwwwwwwk.....', '....kwwwwk......', '....kkkkkk......'], { k: '#2a1e1c', d: '#333', w: '#f2eee6', b: '#8c5a32' }],
+  libro: [['..kkkkkkkkkk....', '..krrrrrrrpk....', '..krryyyrrpk....', '..krrrrrrrpk....', '..krrrrrrrpk....', '..krrrrrrrpk....', '..krrrrrrrpk....', '..krrrrrrrpk....', '..krrrrrrrpk....', '..kkkkkkkkkk....'], { k: '#2a1e1c', r: '#B8432C', y: '#E2B046', p: '#f0e8d6' }],
+  microfono: [['......kkk.......', '.....kmgmk......', '.....kgmgk......', '.....kmgmk......', '......kkk.......', '......kbk.......', '......kbk.......', '......kbk.......', '......kbk.......', '......kbk.......', '.......k........'], { k: '#18181c', m: '#9a9aa2', g: '#5a5a62', b: '#222226' }],
+  helado: [['.....kkkk.......', '....kppwpk......', '...kppppppk.....', '...kppppppk.....', '....kkkkkk......', '....kcCcck......', '.....kcCk.......', '.....kCck.......', '......kk........'], { k: '#2a1e1c', p: '#F08CB4', w: '#fff', c: '#DCAA64', C: '#B48246' }],
+  perro: [['..k.............', '.kbk............', 'kbbbk......k....', 'kbebbk....kbk...', 'kbbbbbkkkkbk....', '.kbbbbbbbbbk....', '..kbbbbbbbbk....', '..kbkbk.kbkbk...', '..kbkbk.kbkbk...', '...k.k...k.k....'], { k: '#2a1e1c', b: '#C48C50', e: '#1e1816' }],
+  gatito: [['k...k...........', 'kgkgk...........', 'kgggk......k....', 'kegegk....kgk...', 'kgpggk....kg....', '.kggggkkkkgk....', '..kggggggggk....', '..kgkgk.kgkgk...', '...k.k...k.k....'], { k: '#1e1c22', g: '#5a565c', e: '#8cdc78', p: '#F096AA' }],
+  balon: [['....kkkkk.......', '...kwwbwwk......', '..kwwbbbwwk.....', '..kbwwbwwbk.....', '..kbbwwwbbk.....', '..kwwwwwwwk.....', '..kwbwwwbwk.....', '...kwbbbwk......', '....kkkkk.......'], { k: '#1e1c22', w: '#f6f4f0', b: '#26262a' }],
+  toalla: [['...kkkkkkk......', '...kwwwwwk......', '...kbbbbbk......', '...kwwwwwk......', '...kwwwwwk......', '...kbbbbbk......', '...kwwwwwk......', '...kwwwwwk......', '...kbbbbbk......', '...kwwwwwk......', '...kkkkkkk......'], { k: '#2a1e1c', w: '#eeeae4', b: '#4690DC' }],
+};
+const spriteCache = {};
+function itemImg(key) {
+  if (IMG[key]) return IMG[key];
+  if (spriteCache[key]) return spriteCache[key];
+  const sp = ITEM_SPRITES[key]; if (!sp) return '';
+  const [rows, pal] = sp, cv = document.createElement('canvas'); cv.width = 16; cv.height = 16;
+  const g = cv.getContext('2d'), off = Math.floor((16 - rows.length) / 2);
+  rows.forEach((row, y) => [...row].forEach((ch, x) => { if (pal[ch]) { g.fillStyle = pal[ch]; g.fillRect(x, y + off, 1, 1); } }));
+  return (spriteCache[key] = cv.toDataURL());
+}
 const XP = { train: 5, record: 10, daily: 2 };
 // Monedas: desde el 21/11/2026 se ganan más despacio (lo de antes se queda como estaba)
 const COINS = { train: 2, record: 5, missionShare: 0.3 };
@@ -473,10 +510,26 @@ function mood() {
   if (run >= 2) return { kind: 'idle', line: `Racha de ${run} días en juego. Haz una misión hoy y la salvas.` };
   return { kind: 'idle', line: idle === 1 ? 'Ayer bien. ¿Seguimos hoy?' : '¿Empezamos? Tus misiones de hoy están aquí abajo.' };
 }
-// Cada mano lleva una sola cosa: si hay dos para la misma mano, se queda la de más nivel (salvo que la hayas quitado)
+/** Objetos que tienes: los que ya tenías por nivel cuando llegó la elección, y los que has elegido en cada nivel. */
+function ensureItems() {
+  if (S.itemsFrom != null) return;
+  const L = levelOf(totalXP());
+  S.itemsFrom = L; S.itemsBase = ITEMS.filter(i => i.level <= L).map(i => i.key); S.itemPicks = S.itemPicks || {};
+}
+const ownedItems = () => { ensureItems(); return new Set([...(S.itemsBase || []), ...Object.values(S.itemPicks || {})]); };
+const seededShuffle = (arr, seed) => { const a = arr.slice(); let h = seed * 2654435761 >>> 0; for (let i = a.length - 1; i > 0; i--) { h = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0; const j = h % (i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+/** Niveles en los que aún te toca elegir objeto, y las 3 opciones de cada uno. */
+function pendingPicks() {
+  ensureItems();
+  const L = levelOf(totalXP()), own = ownedItems(), out = [];
+  for (let l = S.itemsFrom + 1; l <= L; l++) if (!S.itemPicks[l]) out.push(l);
+  return out.filter(() => ALL_ITEMS.some(i => !own.has(i.key)));
+}
+const pickOptions = l => { const own = ownedItems(); return seededShuffle(ALL_ITEMS.filter(i => !own.has(i.key)), l * 7919).slice(0, 3); };
+// Cada mano lleva una sola cosa (y a los pies, una mascota o cosa): si hay dos, se queda la última conseguida
 const wearing = () => {
-  const L = levelOf(totalXP()), used = {};
-  return ITEMS.filter(i => i.wearable && L >= i.level && !S.unequipped.includes(i.key)).reverse()
+  const own = ownedItems(), used = {};
+  return ALL_ITEMS.filter(i => i.wearable && own.has(i.key) && !S.unequipped.includes(i.key)).reverse()
     .filter(i => { if (!i.slot) return true; if (used[i.slot]) return false; used[i.slot] = true; return true; }).reverse().map(i => i.key);
 };
 
@@ -1338,15 +1391,15 @@ function viewPlayer() {
   const rows = ui.ranking ? rankedPlayers('week') : [], r = (ui.ranking ? rankedPlayers('week', true) : []).find(x => x.user_id === ui.playerId);
   if (!r) return '<section class="panel"><p class="hint">No encuentro a esta persona. Vuelve al ranking.</p><button class="btn" data-act="open" data-id="ranking">Ir al ranking</button></section>';
   const pos = Math.max(1, rows.findIndex(x => x.user_id === r.user_id) + 1), bg = colorHex(r.color), ink = inkFor(bg), m = playerMood(r);
-  const items = ITEMS.filter(i => r.level >= i.level);
+  const items = ALL_ITEMS.filter(i => ((r.look && r.look.items) || []).includes(i.key));
   return html`<section class="c-hero player-hero" style="--hero-bg:${bg};--hero-ink:${ink}" data-ink="${ink === '#111111' ? 'dark' : 'light'}">
       <div class="player-top"><div class="player-char ${'m-' + m}"><img src="${playerImage(r)}" alt=""></div>
         <div class="player-info"><span class="pill">${GLYPH.trophy}${pos}º esta semana</span><h2>${esc(r.name)}</h2><p>Nivel ${r.level} · ${rankFor(r.level)}</p><p class="mood-chip">${MOOD_TEXT[m]}</p></div></div></section>
     <section class="panel"><h3>Esta semana</h3>
       <div class="trio"><div><b class="num">${r.week_xp}</b><span>XP</span></div><div><b class="num">${r.streak}</b><span>${r.streak === 1 ? 'día seguido' : 'días seguidos'}</span></div><div><b class="num">${r.chests_week}</b><span>${r.chests_week === 1 ? 'cofre' : 'cofres'}</span></div></div>
       <p class="hint num">${r.xp} XP en total.</p></section>
-    <section class="panel"><h3>Objetos <span class="label">${items.length}/${ITEMS.length}</span></h3>
-      ${items.length ? `<div class="mini-items">${items.map(i => `<span title="${i.name}"><img src="${IMG[i.key]}" alt="${i.name}"></span>`).join('')}</div>` : '<p class="hint">Todavía no ha desbloqueado ninguno.</p>'}</section>
+    <section class="panel"><h3>Lleva puesto <span class="label">${items.length}</span></h3>
+      ${items.length ? `<div class="mini-items">${items.map(i => `<span title="${i.name}"><img src="${itemImg(i.key)}" alt="${i.name}"></span>`).join('')}</div>` : '<p class="hint">Ahora mismo no lleva ningún objeto.</p>'}</section>
     ${when(!r.me, viewPlayerRoutines(r))}
     ${when(!r.me, `<button class="btn wide ${S.rivals.includes(r.user_id) ? '' : 'dark'} rival-btn" data-act="toggleRival" data-id="${esc(r.user_id)}">${S.rivals.includes(r.user_id) ? '★ Es tu rival · quitar' : '☆ Añadir como rival'}</button>`)}
     ${when(!r.me && cloud.user, viewDuelForm(r))}
@@ -1548,14 +1601,15 @@ function viewCampaignCard(c) {
     <span class="big num">${pct(p)}%</span>${bar(p)}</button>`;
 }
 function viewInventory() {
-  const L = levelOf(totalXP()), got = ITEMS.filter(i => L >= i.level).length, worn = wearing();
-  return html`<section class="inv"><h3>Inventario <span>${got}/${ITEMS.length} objetos</span></h3><div class="items">${ITEMS.map(i => {
-    const ok = L >= i.level, on = worn.includes(i.key);
-    const inner = `<img src="${IMG[i.key]}" alt="">${when(on, '<em>Puesto</em>')}<small>${ok ? i.name : 'Nv ' + i.level}</small>`;
-    return ok && i.wearable
-      ? `<button class="item got ${on ? 'on' : ''}" data-act="toggleWear" data-k="${i.key}" aria-pressed="${on}" aria-label="${on ? 'Quitar' : 'Poner'} ${i.name}">${inner}</button>`
-      : `<div class="item ${ok ? 'got' : 'locked'}" title="${ok ? i.name : 'Se desbloquea en el nivel ' + i.level}">${inner}</div>`;
-  })}</div><p class="hint inv-hint">Toca un objeto para que tu personaje se lo ponga o se lo quite. En cada mano lleva una sola cosa.</p></section>`;
+  const own = ownedItems(), worn = wearing(), pend = pendingPicks();
+  const choose = pend.length ? html`<div class="pick-item"><b>🎁 Nivel ${pend[0]}: elige un objeto</b><small>Te quedas con uno. Los otros podrán salirte al subir de nivel.</small>
+    <div class="pick-opts">${pickOptions(pend[0]).map(i => `<button class="item got" data-act="pickItem" data-l="${pend[0]}" data-k="${i.key}"><img src="${itemImg(i.key)}" alt=""><small>${i.name}</small></button>`).join('')}</div>${pend.length > 1 ? `<small>Te quedan ${pend.length} por elegir.</small>` : ''}</div>` : '';
+  return html`<section class="inv"><h3>Inventario <span>${own.size}/${ALL_ITEMS.length} objetos</span></h3>${choose}<div class="items">${ALL_ITEMS.map(i => {
+    const ok = own.has(i.key), on = worn.includes(i.key);
+    const inner = `<img src="${itemImg(i.key)}" alt="">${when(on, '<em>Puesto</em>')}<small>${ok ? i.name : '?'}</small>`;
+    return ok ? `<button class="item got ${on ? 'on' : ''}" data-act="toggleWear" data-k="${i.key}" aria-pressed="${on}" aria-label="${on ? 'Quitar' : 'Poner'} ${i.name}">${inner}</button>`
+      : `<div class="item locked" title="Puede salirte al subir de nivel">${inner}</div>`;
+  })}</div><p class="hint inv-hint">Cada nivel nuevo eliges un objeto. Toca los tuyos para ponértelos o quitártelos: una cosa en cada mano y una a tus pies.</p></section>`;
 }
 function viewNewCampaign() {
   const have = new Set(S.campaigns.map(c => c.tpl || c.id));
@@ -2129,12 +2183,12 @@ function showChest(chest) {
   document.body.appendChild(el);
 }
 function showLevelUp(L) {
-  const item = ITEMS.find(i => i.level === L), el = document.createElement('div');
+  const pick = pendingPicks().includes(L), el = document.createElement('div');
   el.className = 'lvlup';
   el.innerHTML = html`<div><span class="pill">${GLYPH.star}Subes de nivel</span><div class="big">${L}</div><h2>${rankFor(L)}</h2>
-    ${item ? `<img src="${IMG[item.key]}" alt=""><p class="hint on-lilac">Desbloqueas: <b>${item.name}</b>${item.wearable ? '. Tu personaje ya lo lleva puesto.' : ''}</p>` : ''}
+    ${pick ? `<div class="lv-opts">${pickOptions(L).map(i => `<img src="${itemImg(i.key)}" alt="">`).join('')}</div><p class="hint on-lilac">Toca <b>Elegir objeto</b> y quédate con uno de estos tres.</p><button class="btn wide" data-go-inv>Elegir objeto</button>` : ''}
     <button class="btn dark wide">Seguir</button></div>`;
-  el.addEventListener('click', () => el.remove());
+  el.addEventListener('click', e => { el.remove(); if (e.target.closest('[data-go-inv]')) { ui.view = 'home'; render(); const inv = document.querySelector('.inv'); if (inv) inv.scrollIntoView({ behavior: 'smooth', block: 'start' }); } });
   document.body.appendChild(el);
 }
 
@@ -2271,11 +2325,16 @@ const actions = {
     showChest(chest);
     if (gold) postFeed('chest', `ha abierto un cofre dorado: +${chest.coins} monedas`, 'chest:' + date);
   },
+  pickItem: el => {
+    const l = +el.dataset.l, k = el.dataset.k, it = ALL_ITEMS.find(i => i.key === k);
+    update(s => { s.itemPicks[l] = k; s.unequipped = s.unequipped.filter(x => x !== k); if (it.slot) ALL_ITEMS.filter(i => i.slot === it.slot && i.key !== k && !s.unequipped.includes(i.key)).forEach(i => s.unequipped.push(i.key)); }, { reward: false });
+    toast(`🎁 ¡${it.name} para ti! Tu personaje ya lo lleva`);
+  },
   toggleWear: el => update(s => {
-    const it = ITEMS.find(i => i.key === el.dataset.k);
+    const it = ALL_ITEMS.find(i => i.key === el.dataset.k);
     if (it && it.slot && !wearing().includes(it.key)) {   // al ponerte algo en una mano, se quita lo que llevaras en esa mano
       s.unequipped = s.unequipped.filter(x => x !== it.key);
-      ITEMS.filter(i => i.slot === it.slot && i.key !== it.key && !s.unequipped.includes(i.key)).forEach(i => s.unequipped.push(i.key));
+      ALL_ITEMS.filter(i => i.slot === it.slot && i.key !== it.key && !s.unequipped.includes(i.key)).forEach(i => s.unequipped.push(i.key));
       return;
     }
     const k = el.dataset.k;
