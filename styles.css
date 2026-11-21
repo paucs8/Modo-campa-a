@@ -1030,3 +1030,12 @@ body{padding:0!important}
 .tpl-tabs{flex-wrap:wrap!important;overflow:visible!important;margin:0!important;padding:0!important}
 body.sheet-open .nav{opacity:0;pointer-events:none;transform:translate(-50%,140%)}
 .nav{transition:opacity .2s, transform .3s var(--ease)}
+
+/* Inventario: el nombre debajo del objeto, legible, y el "puesto" como un check en la esquina */
+.item{flex-direction:column;gap:4px;padding:8px 6px 6px;justify-content:flex-start}
+.item img{flex:1;min-height:0;width:100%;height:auto;max-height:calc(100% - 22px)}
+.item small{position:static;flex:none;font-size:11px;font-weight:700;line-height:1;padding:3px 7px;border-radius:99px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.item.got small{background:rgba(255,255,255,.75);color:#111}
+.item.locked small{background:rgba(255,255,255,.08);color:#bbb}
+.item em{top:5px;left:auto;right:5px;width:20px;height:20px;padding:0;font-size:0;display:grid;place-items:center;background:#111}
+.item em::after{content:"✓";font-size:12px;font-weight:900;color:var(--lime)}
