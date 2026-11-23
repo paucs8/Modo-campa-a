@@ -465,10 +465,11 @@ function dailyItemStreak(id) {
 const TRAIN_CUTOFF = '2026-11-23';
 const INTENSITY = {
   suave: { label: '🚶 Suave', hint: 'Caminar, estirar, yoga', xpm: 0.15 },
-  media: { label: '💪 Media', hint: 'Fuerza, baile, bici', xpm: 0.3 },
-  fuerte: { label: '🔥 Fuerte', hint: 'Correr, comba, HIIT, partido', xpm: 0.45 },
+  media: { label: '💪 Media', hint: 'Fuerza, bici, técnica de baile', xpm: 0.3 },
+  fuerte: { label: '🔥 Fuerte', hint: 'Correr, comba, HIIT, partido, bailar coreos', xpm: 0.45 },
 };
-const INTENSE_WORDS = /correr|carrera|comba|cuerda|hiit|burpee|f[uú]tbol|boxeo|nataci[oó]n|nadar|escalada|baloncesto|sprint|crossfit|spinning|mountain/i;
+// El baile cuenta como fuerte (coreos, clases, ensayos): mueve todo el cuerpo y cansa como correr. Si es solo técnica o estirar, se puede bajar a media o suave.
+const INTENSE_WORDS = /correr|carrera|comba|cuerda|hiit|burpee|f[uú]tbol|boxeo|nataci[oó]n|nadar|escalada|baloncesto|sprint|crossfit|spinning|mountain|baile|bailar|danza|coreo|zumba|dance|salsa|bachata|hip ?hop|reggaet[oó]n|ballet/i;
 const SOFT_WORDS = /caminar|andar|paseo|estir|yoga|movilidad|respira|meditar/i;
 /** Intensidad que se le supone a una actividad o rutina si no la has elegido. */
 function guessIntensity(name, exNames = []) {
