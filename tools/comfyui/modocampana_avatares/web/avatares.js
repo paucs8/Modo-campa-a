@@ -7,7 +7,7 @@ const SUPABASE_URL = "https://kbifpoklblhygigtzbpd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_2RW_a6X-IlB2naB7oV8Png_tslgo8ZS";            // clave publicable (no es secreta)
 const BASE_FILE = { filename: "maniqui_00002_.png", subfolder: "modocampana" };   // cuerpo base
 const STYLE = "3D render of one stylized streetwear doll character, collectible designer fashion figure, full body, front view, standing straight with arms relaxed down along the body, feet slightly apart, oversized big head, big almond eyes with long lashes, small pouty lips, rosy cheeks, slim small body, very detailed realistic fabric textures with stitching and folds, oversized baggy layered streetwear outfit, soft studio lighting, soft shadow on the floor, plain white background, centered, ultra detailed octane render, no logos, no text, no brand names";
-const DENOISE = 0.82, EVERY = 60_000;
+const DENOISE = { nuevo: 0.82, cambio: 0.72, retoque: 0.55 }, EVERY = 60_000;
 const CROP = { x: 116, y: 16, w: 600, h: 1200 }, OUT = { w: 360, h: 720 };
 
 let sb = null, busy = false, baseReady = false, box = null;
@@ -54,7 +54,7 @@ async function ensureBase() {
   if (!r.ok) throw new Error("no encuentro el maniquí " + BASE_FILE.filename);
   await uploadInput(await r.blob(), "mc_maniqui.png"); baseReady = true;
 }
-function workflow(text, seed) {
+function workflow(text, seed, image = "mc_maniqui.png", denoise = DENOISE.nuevo) {
   return {
     "1": { class_type: "UNETLoader", inputs: { unet_name: "z_image_turbo_int8_convrot.safetensors", weight_dtype: "default" } },
     "2": { class_type: "CLIPLoader", inputs: { clip_name: "qwen_3_4b_fp8_mixed.safetensors", type: "lumina2" } },
@@ -62,9 +62,9 @@ function workflow(text, seed) {
     "4": { class_type: "ModelSamplingAuraFlow", inputs: { model: ["1", 0], shift: 3 } },
     "5": { class_type: "CLIPTextEncode", inputs: { clip: ["2", 0], text } },
     "6": { class_type: "ConditioningZeroOut", inputs: { conditioning: ["5", 0] } },
-    "11": { class_type: "LoadImage", inputs: { image: "mc_maniqui.png" } },
+    "11": { class_type: "LoadImage", inputs: { image } },
     "13": { class_type: "VAEEncode", inputs: { pixels: ["11", 0], vae: ["3", 0] } },
-    "8": { class_type: "KSampler", inputs: { model: ["4", 0], positive: ["5", 0], negative: ["6", 0], latent_image: ["13", 0], seed, steps: 9, cfg: 1, sampler_name: "res_multistep", scheduler: "simple", denoise: DENOISE } },
+    "8": { class_type: "KSampler", inputs: { model: ["4", 0], positive: ["5", 0], negative: ["6", 0], latent_image: ["13", 0], seed, steps: 9, cfg: 1, sampler_name: "res_multistep", scheduler: "simple", denoise } },
     "9": { class_type: "VAEDecode", inputs: { samples: ["8", 0], vae: ["3", 0] } },
     // recorte del fondo con SAM3 (ya instalado en tu ComfyUI)
     "20": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "sam3.1_multiplex_fp16.safetensors" } },
@@ -75,9 +75,19 @@ function workflow(text, seed) {
     "10": { class_type: "SaveImage", inputs: { images: ["24", 0], filename_prefix: "modocampana/avatares/av" } },
   };
 }
-async function generate(text, seed) {
+/** Para cambios y retoques se parte del personaje que ya tiene (misma cara y cuerpo), sobre fondo blanco. */
+async function prepareBase(url, id) {
+  const bmp = await createImageBitmap(await fetch(url).then(r => { if (!r.ok) throw new Error("no puedo bajar su personaje"); return r.blob(); }));
+  const c = document.createElement("canvas"); c.width = 832; c.height = 1216;
+  const x = c.getContext("2d"); x.fillStyle = "#f4f4f4"; x.fillRect(0, 0, 832, 1216);
+  x.drawImage(bmp, CROP.x, CROP.y, CROP.w, CROP.h);
+  const name = `mc_base_${id}.png`;
+  await uploadInput(await new Promise(r => c.toBlob(r, "image/png")), name);
+  return name;
+}
+async function generate(text, seed, image, denoise) {
   await ensureBase();
-  const r = await fetch("/prompt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: workflow(text, seed), client_id: "modocampana" }) }).then(r => r.json());
+  const r = await fetch("/prompt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: workflow(text, seed, image, denoise), client_id: "modocampana" }) }).then(r => r.json());
   if (!r.prompt_id) throw new Error("ComfyUI no aceptó el trabajo");
   for (let i = 0; i < 300; i++) {          // hasta 10 minutos
     await sleep(2000);
@@ -112,8 +122,11 @@ async function tick() {
     const { data: claimed } = await c.from("avatar_requests").update({ status: "generando", updated_at: new Date().toISOString() }).eq("id", req.id).eq("status", "pendiente").select("id");
     if (!claimed || !claimed.length) return;
     try {
-      log(`Generando el personaje de ${req.name || "alguien"}…`);
-      const png = await cutout(await generate(STYLE + ", " + req.prompt, hash(req.user_id)));
+      const spec = req.spec || {}, kind = spec.base ? (spec.kind === "retoque" ? "retoque" : "cambio") : "nuevo";
+      log(`${kind === "retoque" ? "Retocando" : "Generando"} el personaje de ${req.name || "alguien"}…`);
+      const image = kind === "nuevo" ? "mc_maniqui.png" : await prepareBase(spec.base, req.id);
+      const text = STYLE + ", " + req.prompt + (spec.note ? `. Cambio pedido por la persona: ${spec.note}` : "");
+      const png = await cutout(await generate(text, hash(req.user_id) + (kind === "nuevo" ? 0 : req.id), image, DENOISE[kind]));
       const path = `${req.user_id}/${req.id}.png`;
       const up = await c.storage.from("avatares").upload(path, png, { contentType: "image/png", upsert: true });
       if (up.error) throw new Error("subida: " + up.error.message);

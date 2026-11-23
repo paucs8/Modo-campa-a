@@ -22,6 +22,9 @@ create policy "ver mis personajes" on public.avatar_requests for select to authe
 create policy "pedir personaje" on public.avatar_requests for insert to authenticated
   with check (auth.uid() = user_id and status = 'pendiente' and image_url is null);
 create policy "generar personajes" on public.avatar_requests for update to authenticated using (public.is_admin()) with check (public.is_admin());
+-- El admin puede pedir los personajes de todos (para crear los de los jugadores que ya existen)
+drop policy if exists "admin pide personajes" on public.avatar_requests;
+create policy "admin pide personajes" on public.avatar_requests for insert to authenticated with check (public.is_admin() and status = 'pendiente');
 
 -- Sitio donde se guardan las imágenes (público para poder verlas en la app; solo el admin sube)
 insert into storage.buckets (id, name, public) values ('avatares', 'avatares', true) on conflict (id) do nothing;

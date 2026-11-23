@@ -808,7 +808,7 @@ async function publishProfile() {
   const xp = totalXP();
   const row = { user_id: cloud.user.id, name: S.name.slice(0, 24), color: S.color, level: levelOf(xp), xp,
     week: mondayKey(), week_xp: weekXP(), streak: activeStreak(), chests_week: chestsThisWeek(), updated_at: new Date().toISOString() };
-  const extras = { photo: S.photo, look: Object.assign({}, S.look, { items: wearing(), avatar: S.avatarOff ? null : (S.avatarUrl || null) }) }, prev = { prev_week: lastMondayKey(), prev_week_xp: myPrevWeekXP() };
+  const extras = { photo: S.photo, look: Object.assign({}, S.look, { items: wearing(), avatar: S.avatarUrl || null }) }, prev = { prev_week: lastMondayKey(), prev_week_xp: myPrevWeekXP() };
   // Si a la tabla le faltan columnas (SQL sin ejecutar), se publica lo que se pueda
   const tries = [[ui.profileExtras, ui.prevCols], [ui.profileExtras, false], [false, false]].filter(([e, p], i, a) => i === 0 || (e !== a[0][0] || p !== a[0][1]));
   let error = null;
@@ -1273,7 +1273,7 @@ const bar = (p, cls = 'bar') => `<div class="${cls}"><i style="width:${p * 100}%
 
 function viewTop() {
   const d = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' });
-  return html`<header class="top"><button class="avatar ${!S.photo && S.avatarUrl && !S.avatarOff ? 'ill' : ''}" data-act="open" data-id="profile" aria-label="Tu perfil"><img src="${S.photo || (S.avatarUrl && !S.avatarOff ? esc(S.avatarUrl) : Character.face(S.look))}" alt="" class="${S.photo ? 'photo' : ''}"></button>${pendingIdeas() ? `<button class="idea-badge num" data-act="open" data-id="ideas" aria-label="${pendingIdeas()} ideas nuevas en el buzón">${pendingIdeas()}</button>` : ''}
+  return html`<header class="top"><button class="avatar ${!S.photo && S.avatarUrl ? 'ill' : ''}" data-act="open" data-id="profile" aria-label="Tu perfil"><img src="${S.photo || (S.avatarUrl ? esc(S.avatarUrl) : Character.face(S.look))}" alt="" class="${S.photo ? 'photo' : ''}"></button>${pendingIdeas() ? `<button class="idea-badge num" data-act="open" data-id="ideas" aria-label="${pendingIdeas()} ideas nuevas en el buzón">${pendingIdeas()}</button>` : ''}
     <div class="hello"><b>Hola, ${esc(S.name)}</b><span>${esc(d[0].toUpperCase() + d.slice(1))}</span></div>
     <button class="sync" id="sync" data-s="${ui.sync}" title="${SYNC_LABEL[ui.sync]}" aria-label="${SYNC_LABEL[ui.sync]}" data-act="syncInfo"><i></i></button></header>`;
 }
@@ -1295,7 +1295,7 @@ function viewAccount() {
     <p class="hint">¿Primera vez? Pon tu email y una contraseña nueva y dale a Crear cuenta. Si ya tienes, dale a Entrar.</p></section>`;
 }
 function viewAxis(state, look = S.look) {
-  if (look === S.look && S.avatarUrl && !S.avatarOff) return `<div class="char ill mood-${state}" aria-hidden="true"><img src="${esc(S.avatarUrl)}" alt=""></div>`;
+  if (look === S.look && S.avatarUrl) return `<div class="char ill mood-${state}" aria-hidden="true"><img src="${esc(S.avatarUrl)}" alt=""></div>`;
   const src = Character.image(look, { items: wearing(), mood: state });
   return `<div class="char mood-${state}" aria-hidden="true"><img src="${src}" alt="">${state === 'tired' ? '<span class="zzz">z<b>z</b></span>' : ''}</div>`;
 }
@@ -1382,8 +1382,13 @@ const chip = (field, value, label, current) => {
   return `<button type="button" class="chip-btn ${Character.PREMIUM[field + ':' + value] ? 'special' : ''}" data-act="setLook" data-f="${field}" data-v="${value}" aria-pressed="${String(current) === String(value)}">${label}</button>`;
 };
 /* ---------- Personaje ilustrado: se pide desde aquí y lo genera el ordenador de Pau ---------- */
-const AVATAR_COST = 40;
-const avatarCost = () => (S.purchases.some(p => p.avatar) ? AVATAR_COST : 0);   // el primero es gratis
+const AVATAR_COST = 40, AVATAR_FREE = 5;
+const avatarUsed = () => S.purchases.filter(p => p.avatar).length;
+const avatarFreeLeft = () => Math.max(0, AVATAR_FREE - avatarUsed());
+const avatarCost = () => (avatarFreeLeft() > 0 ? 0 : AVATAR_COST);   // los 5 primeros cambios son gratis
+/** Lo que define al personaje: si cambia respecto a lo último enviado, hay cambios por enviar. */
+const avatarSpecKey = () => JSON.stringify({ look: Object.assign({}, Character.upgrade(S.look)), items: wearing().slice().sort() });
+const avatarPending = () => !S.avatarUrl || S.avatarSent !== avatarSpecKey();
 const COLOR_NAMES = [['black', 20, 20, 22], ['charcoal grey', 60, 58, 62], ['grey', 140, 138, 140], ['light grey', 205, 203, 200], ['white', 245, 243, 238], ['cream', 236, 226, 205], ['beige', 201, 188, 164],
   ['brown', 110, 70, 45], ['dark brown', 60, 36, 24], ['light brown', 160, 115, 75], ['blonde', 210, 170, 100], ['platinum blonde', 232, 220, 192], ['red', 200, 50, 45], ['ginger', 184, 67, 44], ['burgundy', 110, 30, 40],
   ['orange', 230, 130, 40], ['yellow', 242, 193, 78], ['olive green', 74, 90, 58], ['green', 63, 140, 71], ['mint green', 150, 220, 180], ['neon green', 63, 224, 160], ['teal', 40, 130, 130], ['light blue', 140, 175, 215],
@@ -1433,16 +1438,34 @@ function lookToPrompt(look, items) {
 }
 const AVATAR_STATUS = { pendiente: '⏳ En cola', generando: '🎨 Generándose ahora', listo: '✅ Listo', error: '⚠️ No se pudo generar' };
 function viewAvatarPanel() {
-  const r = S.avatarReq, cost = avatarCost(), waiting = r && (r.status === 'pendiente' || r.status === 'generando');
-  const who = Character.upgrade(S.look).gen || '';
-  return html`<section class="panel avatar-panel"><h3>Personaje ilustrado</h3>
-    <p class="hint">Con lo que eliges arriba (ropa, colores, objetos que llevas puestos) se dibuja tu personaje en 3D. <b>No es al momento</b>: se genera en el ordenador de Pau y te llega un aviso cuando esté, normalmente en unas horas.</p>
-    <div class="look-row"><span class="label">Eres</span><div class="chips">${Object.entries({ chica: 'Chica', chico: 'Chico', neutro: 'Prefiero no decir' }).map(([k, t]) => `<button type="button" class="chip-btn" data-act="setLook" data-f="gen" data-v="${k}" aria-pressed="${who === k}">${t}</button>`).join('')}</div></div>
+  const r = S.avatarReq, cost = avatarCost(), free = avatarFreeLeft(), waiting = r && (r.status === 'pendiente' || r.status === 'generando');
+  const price = cost ? `${cost} monedas` : `gratis · te quedan ${free}`;
+  const sendLabel = ui.armed === 'buy:avatar' ? (cost ? `¿Gastar ${cost} monedas?` : '¿Enviar ahora?') : (S.avatarUrl ? 'Enviar cambios' : 'Crear mi personaje');
+  return html`<div class="avatar-box">
     ${r ? `<p class="avatar-status st-${esc(r.status)}">${AVATAR_STATUS[r.status] || r.status}${r.status === 'error' ? ' · te hemos devuelto las monedas' : ''}</p>` : ''}
-    ${waiting ? '<p class="hint">Cuando esté listo te avisamos. Si cambias algo ahora, tendrás que pedirlo otra vez.</p>'
-      : `<button class="btn primary wide" data-act="buyAvatar" ${!cloud.user ? 'disabled' : ''}>${ui.armed === 'buy:avatar' ? (cost ? `¿Gastar ${cost} monedas?` : '¿Pedirlo ahora?') : (S.avatarUrl ? 'Pedir personaje nuevo' : 'Crear mi personaje')} · ${cost ? `${cost} monedas` : 'gratis'}</button>`}
-    ${!cloud.user ? '<p class="hint">Necesitas cuenta para pedirlo.</p>' : ''}
-    ${S.avatarUrl ? '<div class="edit-row"><button class="btn ghost" data-act="toggleAvatar">' + (S.avatarOff ? 'Usar el ilustrado' : 'Volver al pixel art') + '</button></div>' : ''}</section>`;
+    ${waiting ? `<p class="hint">Se está preparando en el ordenador de Pau. Te llegará un aviso cuando esté.</p>`
+      : avatarPending() ? html`<p class="hint">${S.avatarUrl ? '<b>Tienes cambios sin enviar.</b> ' : ''}Tu personaje <b>no cambia al momento</b>: cuando le das a enviar se dibuja en el ordenador de Pau y te avisamos al terminar.</p>
+        <button class="btn primary wide" data-act="buyAvatar" ${!cloud.user ? 'disabled' : ''}>${sendLabel} · ${price}</button>`
+      : '<p class="hint">Cambia lo que quieras arriba y luego envíalo. Si algo no te convence, pide un retoque.</p>'}
+    ${S.avatarUrl && !waiting ? html`<form class="retouch" data-form="retouchAvatar"><label class="fld"><span>¿Algo que retocar?</span>
+        <textarea name="t" rows="2" maxlength="200" placeholder="Ej: el pelo más largo, la sudadera más ancha, que sonría…"></textarea></label>
+        <button class="btn">Pedir retoque · ${price}</button></form>` : ''}
+    ${!cloud.user ? '<p class="hint">Necesitas cuenta para que te lo dibujen.</p>' : ''}
+    ${ui.isAdmin ? `<div class="edit-row"><button class="btn ghost" data-act="avatarsForAll">Generar los personajes de todos</button></div>` : ''}</div>`;
+}
+/** Manda el pedido a la cola. kind: nuevo | cambio | retoque (note = lo que hay que retocar). */
+async function requestAvatar(kind, note = '') {
+  const cost = avatarCost(), items = wearing();
+  const spec = Object.assign({}, Character.upgrade(S.look), { items, kind, note, base: kind === 'nuevo' ? null : S.avatarUrl });
+  const { data, error } = await cloud.client.from('avatar_requests').insert({ user_id: cloud.user.id, name: S.name, spec, prompt: lookToPrompt(S.look, items), cost }).select('id,status').maybeSingle();
+  if (error) { toast(missingTable(error) ? 'Falta activar los personajes en Supabase' : 'No se pudo enviar'); return false; }
+  update(s => {
+    s.purchases.push({ id: uid(), name: kind === 'retoque' ? 'Retoque de personaje' : 'Personaje ilustrado', cost, d: today(), avatar: data && data.id });
+    s.avatarReq = { id: data && data.id, status: 'pendiente' }; s.avatarSent = avatarSpecKey();
+  }, { reward: false });
+  toast('⏳ Enviado. Te avisamos cuando esté listo');
+  clearTimeout(avatarTimer); avatarTimer = setTimeout(checkAvatar, 120000);
+  return true;
 }
 let avatarTimer = null;
 /** Mira cómo va tu último pedido; si está listo se pone solo, si falló se devuelven las monedas. */
@@ -1454,7 +1477,7 @@ async function checkAvatar() {
   const r = data && data[0]; if (!r) return;
   const prev = S.avatarReq || {}, changed = prev.id !== r.id || prev.status !== r.status;
   if (r.status === 'listo' && r.image_url && S.avatarUrl !== r.image_url) {
-    update(s => { s.avatarUrl = r.image_url; s.avatarOff = false; s.avatarReq = { id: r.id, status: r.status }; }, { reward: false });
+    update(s => { s.avatarUrl = r.image_url; s.avatarReq = { id: r.id, status: r.status }; if (!s.avatarSent) s.avatarSent = avatarSpecKey(); }, { reward: false });
     toast('🎨 ¡Tu personaje ilustrado ya está listo!'); return;
   }
   if (r.status === 'error' && r.cost && !S.avatarRefunds.includes(r.id)) {
@@ -1465,7 +1488,7 @@ async function checkAvatar() {
 function viewProfile() {
   const L = Character.upgrade(S.look), xp = totalXP();
   return html`<section class="c-hero profile-hero" ${heroStyle()}>
-    <div class="me-row"><span class="big-ava ${!S.photo && S.avatarUrl && !S.avatarOff ? 'ill' : ''}">${S.photo ? `<img src="${S.photo}" alt="Tu foto">` : S.avatarUrl && !S.avatarOff ? `<img src="${esc(S.avatarUrl)}" alt="">` : `<img class="pix" src="${Character.face(L)}" alt="">`}</span>
+    <div class="me-row"><span class="big-ava ${!S.photo && S.avatarUrl ? 'ill' : ''}">${S.photo ? `<img src="${S.photo}" alt="Tu foto">` : S.avatarUrl ? `<img src="${esc(S.avatarUrl)}" alt="">` : `<img class="pix" src="${Character.face(L)}" alt="">`}</span>
       <div><h2>${esc(S.name || 'Tu perfil')}</h2><p>Nivel ${levelOf(xp)} · ${rankFor(levelOf(xp))}</p></div></div>
     <div class="edit-row"><label class="btn dark file-btn">${S.photo ? 'Cambiar foto' : 'Subir foto'}<input type="file" accept="image/*" data-photo hidden></label>
       ${when(S.photo, '<button class="btn on-color" data-act="removePhoto">Quitar foto</button>')}</div></section>
@@ -1473,11 +1496,12 @@ function viewProfile() {
       <form class="inrow" data-form="saveProfile"><input name="n" maxlength="24" required value="${esc(S.name)}" aria-label="Tu nombre"><button class="btn">Guardar nombre</button></form>
       <div class="fld"><span>Tu color: pinta tu tarjeta y tu sitio en el ranking</span>${viewColorPicker(S.color, 'setProfileColor')}</div></section>
     <section class="panel"><h3>Tu personaje <button class="btn ghost" data-act="randomLook">Aleatorio</button></h3>
+      <div class="look-row"><span class="label">Eres</span><div class="chips">${Object.entries({ chica: 'Chica', chico: 'Chico', neutro: 'Prefiero no decir' }).map(([k, t]) => `<button type="button" class="chip-btn" data-act="setLook" data-f="gen" data-v="${k}" aria-pressed="${(Character.upgrade(S.look).gen || '') === k}">${t}</button>`).join('')}</div></div>
       <div class="look-tabs" role="tablist">${Object.entries(LOOK_TABS).map(([k, t]) => `<button role="tab" data-act="lookTab" data-k="${k}" aria-selected="${ui.lookTab === k}">${t}</button>`).join('')}</div>
-      <div class="look-editor"><div class="look-preview" style="background:${colorHex(S.color)}">${viewAxis('happy')}</div>
+      <div class="look-editor"><div class="look-preview" style="background:${colorHex(S.color)}">${viewAxis('happy')}${S.avatarUrl && avatarPending() ? `<span class="draft-thumb" title="Cómo quedará (borrador)"><img class="pix" src="${Character.image(S.look, { items: wearing() })}" alt=""><small>Borrador</small></span>` : ''}</div>
         <div class="look-controls">${viewLookControls(L)}</div></div>
-      <p class="hint">Lo que desbloqueas en el inventario (cascos, llavero, handycam, skate) se lo pone tu personaje.</p></section>
-    ${viewAvatarPanel()}
+      <p class="hint">Lo que desbloqueas en el inventario (cascos, llavero, handycam, skate) se lo pone tu personaje.</p>
+      ${viewAvatarPanel()}</section>
     <button class="teaser idea-teaser" data-act="open" data-id="ideas"><span class="teaser-ico">${GLYPH.star || '+'}</span><span class="txt"><b>Buzón de ideas</b><small>¿Echas algo en falta? Una campaña, un deporte, algo de la app…</small></span><span class="go">${GLYPH.chev}</span></button>
 ${viewPushPanel()}
     <section class="panel"><h3>Cuenta</h3>
@@ -2653,19 +2677,26 @@ const actions = {
   pickInviter: el => { ui.invite.to = el.dataset.id; ui.armed = null; render(); },
   buyAvatar: async el => {
     if (!cloud.user) return;
-    const cost = avatarCost();
-    if (coins() < cost) { toast(`Te faltan ${cost - coins()} monedas`); return; }
-    if (!Character.upgrade(S.look).gen) { toast('Elige primero si eres chica o chico'); return; }
+    if (!Character.upgrade(S.look).gen) { toast('Elige arriba si eres chica o chico'); return; }
+    if (coins() < avatarCost()) { toast(`Te faltan ${avatarCost() - coins()} monedas`); return; }
     if (ui.armed !== 'buy:avatar') { ui.armed = 'buy:avatar'; render(); return; }
     ui.armed = null; el.disabled = true;
-    const items = wearing(), spec = Object.assign({}, Character.upgrade(S.look), { items });
-    const { data, error } = await cloud.client.from('avatar_requests').insert({ user_id: cloud.user.id, name: S.name, spec, prompt: lookToPrompt(S.look, items), cost }).select('id,status').maybeSingle();
-    if (error) { toast(missingTable(error) ? 'Falta activar los personajes en Supabase' : 'No se pudo pedir'); el.disabled = false; return; }
-    update(s => { s.purchases.push({ id: uid(), name: 'Personaje ilustrado', cost, d: today(), avatar: data && data.id }); s.avatarReq = { id: data && data.id, status: 'pendiente' }; }, { reward: false });
-    toast('⏳ Pedido enviado. Te avisamos cuando esté listo');
-    avatarTimer = setTimeout(checkAvatar, 120000);
+    if (!(await requestAvatar(S.avatarUrl ? 'cambio' : 'nuevo'))) el.disabled = false;
   },
-  toggleAvatar: () => { update(s => { s.avatarOff = !s.avatarOff; }, { reward: false }); },
+  avatarsForAll: async el => {
+    if (!ui.isAdmin) return;
+    if (ui.armed !== 'avatarsForAll') { ui.armed = 'avatarsForAll'; el.textContent = '¿Seguro? Se pedirá uno por cada jugador sin personaje'; return; }
+    ui.armed = null; el.disabled = true;
+    const people = (ui.ranking || []).filter(r => r.look && !r.look.avatar && r.user_id !== cloud.user.id);
+    let ok = 0;
+    for (const r of people) {
+      const look = Object.assign({}, r.look); delete look.items; delete look.avatar;
+      const { error } = await cloud.client.from('avatar_requests').insert({ user_id: r.user_id, name: r.name || '', spec: Object.assign({}, Character.upgrade(look), { items: r.look.items || [], kind: 'nuevo' }), prompt: lookToPrompt(look, r.look.items || []), cost: 0 });
+      if (!error) ok++;
+    }
+    toast(ok ? `🎨 Pedidos ${ok} personajes. Se irán generando en tu ordenador` : 'No se pudo pedir ninguno (¿falta el SQL nuevo?)');
+    el.disabled = false;
+  },
   buyInvite: async el => {
     const inv = ui.invite, it = inviteOf(inv && inv.key), f = (ui.ranking || []).find(r => r.user_id === (inv && inv.to));
     if (!inv || !f || coins() < it.cost) return;
@@ -3038,6 +3069,12 @@ const forms = {
     if (btn) btn.disabled = false;
     if (error) { toast('No se pudo enviar'); return; }
     F.t.value = ''; toast('¡Enviada! Te diremos si entra'); loadIdeas();
+  },
+  retouchAvatar: async (f, F) => {
+    const note = F.t.value.trim();
+    if (!note) { F.t.focus(); return; }
+    if (coins() < avatarCost()) { toast(`Te faltan ${avatarCost() - coins()} monedas`); return; }
+    if (await requestAvatar('retoque', note.slice(0, 200))) F.t.value = '';
   },
   saveProfile: (f, F) => {
     const name = F.n.value.trim();
