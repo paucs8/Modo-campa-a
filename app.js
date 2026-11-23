@@ -201,8 +201,8 @@ function defaultCampaigns() {
   return [
     { id: 'carnet', name: 'Carnet de conducir', icon: 'car', color: 'orange', sub: 'Del papeleo al examen práctico', levels: [
       level('Papeleo', [mission('Elegir autoescuela', 20), mission('Matricularme', 30), mission('Pasar el psicotécnico (reconocimiento médico)', 40), mission('Pagar la tasa de la DGT', 20)]),
-      level('Teórico', [count('Hacer tests de práctica', 40, 20), count('Hacer tests de práctica', 60, 60), mission('5 tests seguidos con 3 fallos o menos', 50), mission('Fecha de examen teórico confirmada', 20), mission('Aprobar el teórico', 150)]),
-      level('Práctico', [mission('Primera clase práctica', 30), count('Clases prácticas', 60, 15), mission('Simulacro de examen sin eliminatorias', 60), mission('Fecha de examen práctico confirmada', 20)]),
+      level('Teórico', [Object.assign(count('Hacer tests de práctica', 60, 20), { unit: 3 }), Object.assign(count('Hacer tests de práctica', 180, 60), { unit: 3 }), mission('5 tests seguidos con 3 fallos o menos', 50), mission('Fecha de examen teórico confirmada', 20), mission('Aprobar el teórico', 150)]),
+      level('Práctico', [mission('Primera clase práctica', 30), Object.assign(count('Clases prácticas', 75, 15), { unit: 5 }), mission('Simulacro de examen sin eliminatorias', 60), mission('Fecha de examen práctico confirmada', 20)]),
       level('Jefe final', [mission('Aprobar el práctico', 250), mission('Primer viaje solo', 50)]),
     ] },
     { id: 'fisico', name: 'Físico', icon: 'dumbbell', color: 'lime', sub: 'Bajar peso y ganar músculo', tracker: 'body', levels: [
@@ -350,6 +350,11 @@ const defaultState = () => ({ v: 5, name: '', onboarded: false, color: '#C7B5FF'
 
 /** Pone al día datos guardados por versiones anteriores. */
 function migrate(s) {
+  (s.campaigns || []).forEach(c => c.id === 'carnet' && c.levels.forEach(l => l.missions.forEach(m => {
+    if (m.type !== 'count' || m.unit) return;
+    if (/tests de pr[aá]ctica/i.test(m.name)) { m.unit = 3; m.xp = m.target * 3; }
+    if (/clases pr[aá]cticas/i.test(m.name)) { m.unit = 5; m.xp = m.target * 5; }
+  })));
   if (!s.routines) {
     s.routines = defaultRoutines();
     const body = s.campaigns.find(c => c.tracker === 'body');
@@ -439,6 +444,17 @@ function autoProgress(m) {
 const clamp = v => Math.max(0, Math.min(1, v));
 const progress = m => (m.type === 'count' ? clamp(m.count / m.target) : m.type === 'auto' ? autoProgress(m) : m.done ? 1 : 0);
 const isDone = m => progress(m) >= 1;
+// Misiones que se repiten (tests, clases…): cada vez da su XP, no solo al terminar
+const unitXP = m => m.unit || Math.max(1, Math.round(m.xp / Math.max(1, m.target || 1)));
+const missionXP = m => (m.type === 'count' ? Math.min(m.count || 0, m.target) * unitXP(m) : isDone(m) ? m.xp : 0);
+const missionMaxXP = m => (m.type === 'count' ? m.target * unitXP(m) : m.xp);
+/** Apunta en qué día se hizo cada repetición (para la XP de la semana). */
+function countLog(m, delta, date = logDate()) {
+  const log = (m.log = m.log || {});
+  if (delta > 0) { log[date] = (log[date] || 0) + delta; return; }
+  const days = Object.keys(log).filter(d => log[d] > 0).sort();
+  const d = days.includes(date) ? date : days.pop(); if (d) { log[d]--; if (!log[d]) delete log[d]; }
+}
 const avg = list => (list.length ? list.reduce((a, m) => a + progress(m), 0) / list.length : 0);
 const levelProgress = l => avg(l.missions);
 const campaignProgress = c => avg(c.levels.flatMap(l => l.missions));
@@ -448,7 +464,7 @@ function currentLevelIndex(c) {
   return i < 0 ? c.levels.length - 1 : i;
 }
 function totalXP() {
-  return trainXP() + totalRecords() * XP.record + allMissions().filter(isDone).reduce((a, m) => a + m.xp, 0) + chestTotals().xp + dailyItemsXP();
+  return trainXP() + totalRecords() * XP.record + allMissions().reduce((a, m) => a + missionXP(m), 0) + chestTotals().xp + dailyItemsXP();
 }
 // ---------- Cada día: cosas propias que hacer o tomar a diario (pastilla, creatina, apuntar la comida…) ----------
 const DAILY_PRESETS = [['💊', 'Tomar la pastilla'], ['🥤', 'Tomar la creatina'], ['🍽️', 'Apuntar lo que como'], ['💧', 'Beber 2 litros de agua'], ['🍊', 'Vitaminas'], ['🧴', 'Skincare'], ['📖', 'Leer 10 minutos'], ['🦷', 'Hilo dental']];
@@ -558,7 +574,7 @@ function questText(q) {
 
 // Monedas: se ganan jugando y se gastan en la tienda
 function coinsEarned() {
-  const fromMissions = allMissions().filter(isDone).reduce((a, m) => a + Math.round(m.xp * (m.doneAt && m.doneAt >= COINS_CUTOFF_MS ? COINS.missionShare : COINS_OLD.missionShare)), 0);
+  const fromMissions = allMissions().reduce((a, m) => a + Math.round(missionXP(m) * (m.type === 'count' || (m.doneAt && m.doneAt >= COINS_CUTOFF_MS) ? COINS.missionShare : COINS_OLD.missionShare)), 0);
   const fromTrain = Object.entries(trainByDay()).reduce((a, [d, xp]) => a + (d < COINS_CUTOFF ? (xp ? COINS_OLD.train : 0) : d < TRAIN_CUTOFF ? (xp ? COINS.train : 0) : Math.max(xp ? 1 : 0, Math.round(xp * 0.15))), 0);
   return fromMissions + fromTrain + totalRecords() * COINS.record + chestTotals().coins + S.coinLog.reduce((a, c) => a + c.amount, 0);
 }
@@ -640,7 +656,10 @@ function xpSince(date, until) {
   const from = new Date(date + 'T00:00').getTime(), to = until ? new Date(until + 'T00:00').getTime() : Infinity;
   const inRange = d => d >= date && (!until || d < until);
   let x = 0;
-  allMissions().forEach(m => { if (m.type !== 'auto' && isDone(m) && m.doneAt && m.doneAt >= from && m.doneAt < to) x += m.xp; });
+  allMissions().forEach(m => {
+    if (m.type === 'count') { Object.entries(m.log || {}).forEach(([d, n]) => { if (inRange(d)) x += n * unitXP(m); }); return; }
+    if (m.type !== 'auto' && isDone(m) && m.doneAt && m.doneAt >= from && m.doneAt < to) x += m.xp;
+  });
   Object.entries(trainByDay()).forEach(([d, v]) => { if (inRange(d)) x += v; });
   Object.entries(S.daily).forEach(([d, v]) => { if (v.chest && inRange(d)) x += v.chest.xp; });
   Object.entries(S.dailyDone).forEach(([d, ids]) => { if (inRange(d)) x += Math.min(5, ids.length) * XP.daily; });
@@ -2191,12 +2210,12 @@ function viewMission(c, l, m) {
   const doneDate = done && m.doneAt && m.type !== 'auto' ? `<small>${new Date(m.doneAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}</small>` : '';
   return html`<li class="m ${done ? 'done' : ''}" data-c="${c.id}" data-l="${l.id}" data-m="${m.id}">${box}
     <div class="txt"><span>${title}</span>${detail}${doneDate}</div>
-    ${ui.editing ? confirmBtn('deleteMission', m.id, 'Quitar') : control}<span class="xp">+${m.xp}</span></li>`;
+    ${ui.editing ? confirmBtn('deleteMission', m.id, 'Quitar') : control}<span class="xp">${m.type === 'count' ? `+${unitXP(m)} c/u` : `+${m.xp}`}</span></li>`;
 }
 function viewLevel(c, l, i, current, forceOpen = false) {
   const p = levelProgress(l), done = l.missions.length && p >= 1, state = done ? 'done' : i === current ? 'current' : 'upcoming';
   const key = c.id + l.id, open = forceOpen || (ui.open[key] ?? state === 'current');
-  const left = l.missions.filter(m => !isDone(m)).length, xp = l.missions.reduce((a, m) => a + m.xp, 0);
+  const left = l.missions.filter(m => !isDone(m)).length, xp = l.missions.reduce((a, m) => a + missionMaxXP(m), 0);
   const status = !l.missions.length ? 'Sin misiones' : `${done ? 'Superado' : (state === 'current' ? 'En curso · ' : '') + left + ' por hacer'} · ${xp} XP`;
   return html`<div class="lv-card ${state}" data-open="${open ? 1 : 0}" ${state === 'current' ? `style="--cbg:${colorVar(c)}"` : ''}>
     <button class="lv-h" ${forceOpen ? 'tabindex="-1"' : `data-act="toggleLevel" data-k="${key}" aria-expanded="${open}"`}><span class="lv-n">${done ? GLYPH.star : i + 1}</span><div class="t"><b>${esc(l.name)}</b><small>${status}</small></div>${forceOpen ? '' : `<span class="chev">${GLYPH.chev}</span>`}</button>
@@ -2439,8 +2458,8 @@ const actions = {
 
   // Misiones
   toggleMission: el => hitBoss(el, s => { const { c, m } = findMission(el); m.done = !m.done; m.doneAt = m.done ? Date.now() : null; logActivity(s, c.id, m.done ? 1 : -1); if (m.done && ui.logDay) m.doneAt = new Date(logDate() + 'T20:00').getTime(); }),
-  increment: el => hitBoss(el, s => { const { c, m } = findMission(el); if (m.count < m.target) { m.count++; logActivity(s, c.id, 1); if (m.count >= m.target) m.doneAt = Date.now(); } }),
-  decrement: el => hitBoss(el, s => { const { c, m } = findMission(el); if (m.count > 0) { m.count--; logActivity(s, c.id, -1); } }),
+  increment: el => hitBoss(el, s => { const { c, m } = findMission(el); if (m.count < m.target) { m.count++; countLog(m, 1); logActivity(s, c.id, 1); if (m.count >= m.target) m.doneAt = Date.now(); } }),
+  decrement: el => hitBoss(el, s => { const { c, m } = findMission(el); if (m.count > 0) { m.count--; countLog(m, -1); logActivity(s, c.id, -1); if (m.count < m.target) m.doneAt = null; } }),
 
   // Perfil, bienvenida y ranking
   toggleStarter: el => { const k = el.dataset.k, on = !ui.onboardCamps[k]; ui.onboardCamps[k] = on; el.classList.toggle('on', on); el.setAttribute('aria-pressed', on); },
@@ -2749,11 +2768,11 @@ const actions = {
       const bumps = (c.checkBumps = c.checkBumps || {}), all = c.levels.flatMap(l => l.missions);
       if (on) {
         days.push(date);
-        bumps[date] = all.filter(m => m.type === 'count' && cfg.match.test(m.name) && m.count < m.target).map(m => { m.count++; logActivity(s, c.id, 1); if (m.count >= m.target) m.doneAt = Date.now(); return m.id; });
+        bumps[date] = all.filter(m => m.type === 'count' && cfg.match.test(m.name) && m.count < m.target).map(m => { m.count++; countLog(m, 1, date); logActivity(s, c.id, 1); if (m.count >= m.target) m.doneAt = Date.now(); return m.id; });
       } else {
         // Al desmarcar se deshace solo lo que sumó ese check
         days.splice(days.indexOf(date), 1);
-        (bumps[date] || []).forEach(id => { const m = all.find(x => x.id === id); if (m && m.count > 0) { m.count--; logActivity(s, c.id, -1); } });
+        (bumps[date] || []).forEach(id => { const m = all.find(x => x.id === id); if (m && m.count > 0) { m.count--; countLog(m, -1, date); logActivity(s, c.id, -1); } });
         delete bumps[date];
       }
     });
