@@ -22,6 +22,8 @@ def compose(spec):
         name,color=spec[slot]
         c=np.load(D+f'/{slot}_{name}_col.npy'); a=np.load(D+f'/{slot}_{name}_al.npy')
         rc=c if slot=='glasses' or color is None else recolor(c,slot,hexc(color))
+        sk=np.load(D+f'/{slot}_{name}_skin.npy')
+        rc=np.where(sk[...,None],c,rc)
         col[a]=rc[a]; al|=a
     hgt=spec.get('height','medio')
     rows=list(range(col.shape[0]))
