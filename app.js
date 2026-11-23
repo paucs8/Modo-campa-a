@@ -623,9 +623,32 @@ function boss(c) {
 
 // Liga semanal: XP ganada desde el lunes, a partir de la XP guardada cada día
 function mondayKey(date = new Date()) { const d = new Date(date); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return dateKey(d); }
+/** Récords de fuerza conseguidos desde una fecha (cada uno da XP). */
+function recordsSince(date) {
+  const best = {}; let n = 0;
+  S.sessions.slice().sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0)).forEach(se => Object.entries(se.ex).forEach(([id, sets]) => {
+    if (!sets || !sets.length) return;
+    const top = Math.max(...sets.map(setScore));
+    if (best[id] != null && top > best[id] + 0.001 && se.d >= date) n++;
+    if (best[id] == null || top > best[id]) best[id] = top;
+  }));
+  return n;
+}
+/** XP ganada desde una fecha, sumando cada cosa por el día en que se hizo.
+ *  (Antes se restaban fotos del total y, al cambiar cómo se cuenta la XP, la semana se quedaba en 0.) */
+function xpSince(date, until) {
+  const from = new Date(date + 'T00:00').getTime(), to = until ? new Date(until + 'T00:00').getTime() : Infinity;
+  const inRange = d => d >= date && (!until || d < until);
+  let x = 0;
+  allMissions().forEach(m => { if (m.type !== 'auto' && isDone(m) && m.doneAt && m.doneAt >= from && m.doneAt < to) x += m.xp; });
+  Object.entries(trainByDay()).forEach(([d, v]) => { if (inRange(d)) x += v; });
+  Object.entries(S.daily).forEach(([d, v]) => { if (v.chest && inRange(d)) x += v.chest.xp; });
+  Object.entries(S.dailyDone).forEach(([d, ids]) => { if (inRange(d)) x += Math.min(5, ids.length) * XP.daily; });
+  x += (recordsSince(date) - (until ? recordsSince(until) : 0)) * XP.record;
+  return x;
+}
 function weekXP() {
-  const monday = mondayKey(), before = Object.keys(S.xpDays).filter(d => d < monday).sort().pop();
-  return Math.max(0, totalXP() - (before ? S.xpDays[before] : 0));
+  return xpSince(mondayKey());
 }
 const chestsThisWeek = () => Object.entries(S.daily).filter(([d, v]) => d >= mondayKey() && v.chest).length;
 function activeStreak() {
@@ -646,7 +669,7 @@ function unlockState(key) {
 }
 const lastMondayKey = () => { const d = new Date(); d.setDate(d.getDate() - 7); return mondayKey(d); };
 const xpBefore = date => { const k = Object.keys(S.xpDays).filter(d => d < date).sort().pop(); return k ? S.xpDays[k] : 0; };
-const myPrevWeekXP = () => Math.max(0, xpBefore(mondayKey()) - xpBefore(lastMondayKey()));
+const myPrevWeekXP = () => xpSince(lastMondayKey(), mondayKey());
 function daysLeftInWeek() { return 7 - ((new Date().getDay() + 6) % 7); }
 
 function weekDays() {
@@ -838,8 +861,7 @@ function myDuelScore(d) {
   if (!d.start_day || today() < d.start_day) return 0;
   const end = d.end_day, now = today(), until = now < end ? null : end;
   if (d.metric === 'entrenos') return S.train.filter(k => k >= d.start_day && k < end).length;
-  const base = S.duelBase[d.id] != null ? S.duelBase[d.id] : xpBefore(d.start_day);
-  return Math.max(0, (until ? xpBefore(until) : totalXP()) - base);
+  return xpSince(d.start_day, until);
 }
 const duelScores = d => { const mine = myDuelScore(d), theirs = iAmChallenger(d) ? d.opponent_score : d.challenger_score; return { mine, theirs: theirs || 0 }; };
 async function loadDuels() {
