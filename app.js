@@ -448,7 +448,7 @@ function currentLevelIndex(c) {
   return i < 0 ? c.levels.length - 1 : i;
 }
 function totalXP() {
-  return trainUnits() * XP.train + totalRecords() * XP.record + allMissions().filter(isDone).reduce((a, m) => a + m.xp, 0) + chestTotals().xp + dailyItemsXP();
+  return trainXP() + totalRecords() * XP.record + allMissions().filter(isDone).reduce((a, m) => a + m.xp, 0) + chestTotals().xp + dailyItemsXP();
 }
 // ---------- Cada día: cosas propias que hacer o tomar a diario (pastilla, creatina, apuntar la comida…) ----------
 const DAILY_PRESETS = [['💊', 'Tomar la pastilla'], ['🥤', 'Tomar la creatina'], ['🍽️', 'Apuntar lo que como'], ['💧', 'Beber 2 litros de agua'], ['🍊', 'Vitaminas'], ['🧴', 'Skincare'], ['📖', 'Leer 10 minutos'], ['🦷', 'Hilo dental']];
@@ -460,16 +460,51 @@ function dailyItemStreak(id) {
   let n = 0; while ((S.dailyDone[dateKey(d)] || []).includes(id)) { n++; d.setDate(d.getDate() - 1); }
   return n;
 }
-/** Entrenos que puntúan: cada día cuenta 1, y si haces dos sesiones ese día (mañana y tarde), cuentan 2. Más de 2 no suma. */
-const TRAIN_MAX_PER_DAY = 2;
-function trainPerDay() {
-  const per = {};
-  S.train.forEach(d => { per[d] = Math.max(per[d] || 0, 1); });
-  const ses = {}; S.sessions.forEach(x => { ses[x.d] = (ses[x.d] || 0) + 1; });
-  Object.entries(ses).forEach(([d, n]) => { per[d] = Math.max(per[d] || 0, Math.min(TRAIN_MAX_PER_DAY, n)); });
-  return per;
+// ---------- XP de entrenar: según el tiempo y la intensidad de cada sesión ----------
+// Desde el 23/11/2026 cada sesión cuenta por sus minutos e intensidad (lo de antes se queda a 5 XP por día entrenado).
+const TRAIN_CUTOFF = '2026-11-23';
+const INTENSITY = {
+  suave: { label: '🚶 Suave', hint: 'Caminar, estirar, yoga', xpm: 0.15 },
+  media: { label: '💪 Media', hint: 'Fuerza, baile, bici', xpm: 0.3 },
+  fuerte: { label: '🔥 Fuerte', hint: 'Correr, comba, HIIT, partido', xpm: 0.45 },
+};
+const INTENSE_WORDS = /correr|carrera|comba|cuerda|hiit|burpee|f[uú]tbol|boxeo|nataci[oó]n|nadar|escalada|baloncesto|sprint|crossfit|spinning|mountain/i;
+const SOFT_WORDS = /caminar|andar|paseo|estir|yoga|movilidad|respira|meditar/i;
+/** Intensidad que se le supone a una actividad o rutina si no la has elegido. */
+function guessIntensity(name, exNames = []) {
+  const all = [name || '', ...exNames].join(' ');
+  if (INTENSE_WORDS.test(all) && !/fuerza|press|sentadilla|peso muerto/i.test(all)) return 'fuerte';
+  if (SOFT_WORDS.test(all) && !exNames.some(n => !SOFT_WORDS.test(n))) return 'suave';
+  return 'media';
 }
-const trainUnits = () => Object.values(trainPerDay()).reduce((a, n) => a + n, 0);
+/** Minutos de una sesión: los que apuntaste, o una estimación por las series que hiciste. */
+function sessionMinutes(se) {
+  if (se.mins) return Math.min(180, se.mins);
+  let m = 0;
+  Object.entries(se.ex || {}).forEach(([id, sets]) => {
+    const x = findExercise(id), k = x ? x.kind : 'reps';
+    sets.forEach(st => { m += k === 'min' ? (st.t || 0) : k === 'run' ? (st.t || (st.km || 0) * 6) : k === 'seg' ? (st.t || 0) / 60 + 1.5 : 2.5; });
+  });
+  return Math.min(180, Math.round(m));
+}
+const sessionIntensity = se => se.int || guessIntensity(se.activity || se.rname, Object.keys(se.ex || {}).map(id => (findExercise(id) || {}).name || ''));
+/** XP de una sesión: minutos (hasta 2 h) × intensidad. Como mínimo 2. Los récords suman aparte. */
+const sessionXP = se => Math.max(2, Math.round(Math.min(120, sessionMinutes(se)) * INTENSITY[sessionIntensity(se)].xpm));
+/** XP del día: lo que pasa de 60 cuenta la mitad, para que se pueda entrenar varias veces sin que se dispare. */
+const dayXPfrom = raw => (raw <= 60 ? raw : 60 + Math.round((raw - 60) / 2));
+function trainByDay() {
+  const days = {};
+  S.train.forEach(d => { days[d] = days[d] || { marked: true, ses: [] }; days[d].marked = true; });
+  S.sessions.forEach(se => { (days[se.d] = days[se.d] || { marked: false, ses: [] }).ses.push(se); });
+  const out = {};
+  Object.entries(days).forEach(([d, v]) => {
+    if (d < TRAIN_CUTOFF) { out[d] = v.marked ? XP.train : 0; return; }
+    const raw = v.ses.reduce((a, se) => a + sessionXP(se), 0) + (v.ses.length ? 0 : (v.marked ? XP.train : 0));
+    out[d] = dayXPfrom(raw);
+  });
+  return out;
+}
+const trainXP = () => Object.values(trainByDay()).reduce((a, n) => a + n, 0);
 function levelOf(xp) { let L = 1; while (xpForLevel(L + 1) <= xp) L++; return L; }
 function streak() {
   const set = new Set(S.train), d = new Date();
@@ -523,7 +558,7 @@ function questText(q) {
 // Monedas: se ganan jugando y se gastan en la tienda
 function coinsEarned() {
   const fromMissions = allMissions().filter(isDone).reduce((a, m) => a + Math.round(m.xp * (m.doneAt && m.doneAt >= COINS_CUTOFF_MS ? COINS.missionShare : COINS_OLD.missionShare)), 0);
-  const fromTrain = Object.entries(trainPerDay()).reduce((a, [d, n]) => a + n * (d >= COINS_CUTOFF ? COINS.train : COINS_OLD.train), 0);
+  const fromTrain = Object.entries(trainByDay()).reduce((a, [d, xp]) => a + (d < COINS_CUTOFF ? (xp ? COINS_OLD.train : 0) : d < TRAIN_CUTOFF ? (xp ? COINS.train : 0) : Math.max(xp ? 1 : 0, Math.round(xp * 0.15))), 0);
   return fromMissions + fromTrain + totalRecords() * COINS.record + chestTotals().coins + S.coinLog.reduce((a, c) => a + c.amount, 0);
 }
 const chestReady = () => !(S.daily[today()] || {}).chest && dailyQuests().every(q => questDone(q));
@@ -1715,11 +1750,12 @@ function sessionLine(se) {
 function viewTraining() {
   const week = new Set(weekDays().map(d => d.key)), dayName = dayWord(ui.logDay || 0), trainedDay = S.train.includes(logDate());
   const recent = S.sessions.slice(-6).reverse();
-  return html`<section class="panel nofold train-panel"><h3>Entrenar <span class="label">+${XP.train} XP cada día</span></h3>
+  return html`<section class="panel nofold train-panel"><h3>Entrenar <span class="label">XP por tiempo e intensidad</span></h3>
     <div class="trio"><div><b>${S.train.length}</b><span>Total</span></div><div><b>${S.train.filter(k => week.has(k)).length}</b><span>Esta semana</span></div><div><b>${streak()}</b><span>Días seguidos</span></div></div>
     <div class="train-cta"><button class="btn primary" data-act="openStart">${GLYPH.play} Entrenar ahora</button><button class="btn dark" data-act="openLog">✏️ Apuntar uno hecho</button></div>
     <p class="hint">«Entrenar ahora» te guía serie a serie con descansos. «Apuntar uno hecho» es para lo que ya hiciste: una rutina, 40 min de baile, un partido…</p>
-    ${when(recent.length, html`<div class="stack-s"><span class="label">Últimos entrenos</span><ul class="hist sess-hist">${recent.map(se => `<li><b>${esc(se.rname || 'Entreno')}</b><span>${shortDate(se.d)}${sessionLine(se) ? ' · ' + sessionLine(se) : ''}${se.note ? ' · ' + esc(se.note) : ''}</span>${confirmBtn('deleteSession', se.id, 'Borrar')}</li>`)}</ul></div>`)}
+    <p class="hint">La XP va por <b>minutos e intensidad</b> (1 h de comba da mucho más que 20 min caminando) y cada récord suma +${XP.record}. Puedes entrenar varias veces al día: a partir de 60 XP en un día, lo demás cuenta la mitad.</p>
+    ${when(recent.length, html`<div class="stack-s"><span class="label">Últimos entrenos</span><ul class="hist sess-hist">${recent.map(se => `<li><b>${esc(se.rname || 'Entreno')}</b><span>${shortDate(se.d)}${sessionLine(se) ? ' · ' + sessionLine(se) : ''}${se.note ? ' · ' + esc(se.note) : ''}${se.d >= TRAIN_CUTOFF ? ` · +${sessionXP(se)} XP` : ''}</span>${confirmBtn('deleteSession', se.id, 'Borrar')}</li>`)}</ul></div>`)}
     <button class="link-btn" data-act="toggleTrainedToday">${trainedDay ? `${dayName[0].toUpperCase() + dayName.slice(1)} ya cuenta como entrenado · quitar` : `Solo marcar ${dayName} como entrenado, sin detalles`}</button></section>`;
 }
 function viewRoutineTpl() {
@@ -1764,6 +1800,12 @@ function qRows(x, rows, key) {
     return `<div class="qrow"><span class="qn">${i + 1}</span>${f}</div>`;
   }).join('');
 }
+const qInt = q => q.int || guessIntensity(q.mode === 'activity' ? q.activity : ((S.routines.find(x => x.id === q.routine) || {}).name || ''), q.mode === 'activity' ? q.extra.map(e => e.name) : ((S.routines.find(x => x.id === q.routine) || {}).exercises || []).map(x => x.name));
+function qEstimate(q) {
+  const mins = parseInt(q.mins, 10) || 0;
+  if (!mins) return 'Pon los minutos para saber cuánta XP te dará (si no, se calcula por las series).';
+  return `≈ +${Math.max(2, Math.round(Math.min(120, mins) * INTENSITY[qInt(q)].xpm))} XP por ${Math.min(120, mins)} min.`;
+}
 function viewQuickLog() {
   const q = ui.qlog, r = S.routines.find(x => x.id === q.routine), isAct = q.mode === 'activity';
   const exBlock = (x, key, removable) => {
@@ -1786,6 +1828,8 @@ function viewQuickLog() {
       ${S.routines.map(x => `<button class="chip-btn" data-act="qRoutine" data-id="${x.id}" aria-pressed="${!isAct && q.routine === x.id}">${esc(x.name)}</button>`).join('')}</div></div>
     ${isAct ? html`<div class="qsec"><label class="fld"><span>Actividad</span><input data-q="activity" list="act-list" value="${esc(q.activity)}" placeholder="Ej: Baile" maxlength="30"></label><datalist id="act-list">${ACTIVITIES.map(a => `<option value="${a}">`).join('')}</datalist>
         <div class="chips">${ACTIVITIES.slice(0, 6).map(a => `<button class="chip-btn" data-act="qAct" data-k="${a}" aria-pressed="${q.activity === a}">${a}</button>`).join('')}</div></div>` : ''}
+    <div class="qsec"><span class="label">Intensidad</span><div class="chips">${Object.entries(INTENSITY).map(([k, v]) => `<button class="chip-btn" data-act="qInt" data-k="${k}" aria-pressed="${qInt(q) === k}" title="${v.hint}">${v.label}</button>`).join('')}</div>
+      <small class="hint">${INTENSITY[qInt(q)].hint}. ${qEstimate(q)}</small></div>
     <div class="qsec two"><label class="fld"><span>Duración (min)</span><div class="stp"><button class="stp-b" data-act="qMins" data-d="-5" aria-label="Menos minutos">−</button><input data-q="mins" inputmode="numeric" value="${esc(q.mins)}" placeholder="0" aria-label="Minutos"><span class="stp-u">min</span><button class="stp-b" data-act="qMins" data-d="5" aria-label="Más minutos">+</button></div></label>
       <label class="fld"><span>${isAct && /baile/i.test(q.activity) ? 'Coreografía' : 'Nota (opcional)'}</span><input data-q="note" value="${esc(q.note)}" maxlength="60" placeholder="${isAct && /baile/i.test(q.activity) ? 'Ej: coreo de Rosalía' : 'Ej: me he notado fuerte'}"></label></div>
     <div class="qsec"><span class="label">${isAct ? 'Ejercicios y series' : 'Ejercicios de ' + esc(r ? r.name : '')}</span>
@@ -2632,7 +2676,8 @@ const actions = {
     render();
   },
   qAct: el => { ui.qlog.activity = el.dataset.k; render(); },
-  qMins: el => { const q = ui.qlog; q.mins = String(Math.max(0, (parseInt(q.mins, 10) || 0) + (+el.dataset.d))); const i = document.querySelector('[data-q=mins]'); if (i) i.value = q.mins; },
+  qInt: el => { ui.qlog.int = el.dataset.k; render(); },
+  qMins: el => { const q = ui.qlog; q.mins = String(Math.max(0, (parseInt(q.mins, 10) || 0) + (+el.dataset.d))); render(); },
   qSkip: el => { const q = ui.qlog; q.skip[el.dataset.k] = !q.skip[el.dataset.k]; render(); },
   qSet: el => {
     const q = ui.qlog, k = el.dataset.k, rows = q.ex[k] || (q.ex[k] = []);
@@ -2673,7 +2718,7 @@ const actions = {
       });
       if (!Object.keys(ex).length && !mins) { sum = false; return; }
       const name = r ? r.name : activity;
-      s.sessions.push({ id: uid(), d: day, routine: r ? r.id : null, rname: name, ex, mins, note: (q.note || '').trim(), activity: r ? null : activity });
+      s.sessions.push({ id: uid(), d: day, routine: r ? r.id : null, rname: name, ex, mins, note: (q.note || '').trim(), activity: r ? null : activity, int: qInt(q) });
       s.sessions.sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
       if (!s.train.includes(day)) { s.train.push(day); s.train.sort(); }
       sum = { name, secs: mins * 60, sets: Object.values(ex).reduce((a, l) => a + l.length, 0), volume: Object.values(ex).flat().reduce((a, st) => a + (st.kg || 0) * (st.r || 0), 0) };
