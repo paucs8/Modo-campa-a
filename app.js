@@ -355,6 +355,13 @@ function migrate(s) {
     if (/tests de pr[aá]ctica/i.test(m.name)) { m.unit = 3; m.xp = m.target * 3; }
     if (/clases pr[aá]cticas/i.test(m.name)) { m.unit = 5; m.xp = m.target * 5; }
   })));
+  // Una sola vez: los tests y clases que ya estaban hechos cuentan como de hoy, para que se vean también en la semana
+  (s.campaigns || []).forEach(c => c.id === 'carnet' && c.levels.forEach(l => l.missions.forEach(m => {
+    if (m.type !== 'count' || !m.unit || m.backfilled) return;
+    const logged = Object.values(m.log || {}).reduce((a, n) => a + n, 0), missing = Math.min(m.count, m.target) - logged;
+    if (missing > 0) { m.log = m.log || {}; const d = dateKey(new Date()); m.log[d] = (m.log[d] || 0) + missing; }
+    m.backfilled = true;
+  })));
   if (!s.routines) {
     s.routines = defaultRoutines();
     const body = s.campaigns.find(c => c.tracker === 'body');
