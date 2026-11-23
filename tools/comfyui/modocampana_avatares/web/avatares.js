@@ -144,8 +144,7 @@ const P_BOTTOM = { cargo: 'baggy cargo pants', vaqueros: 'baggy wide leg jeans',
 const P_LEGS = { medias: 'tights', rejilla: 'fishnet tights', rayas: 'striped tights' };
 const P_SHOES = { bambas: 'chunky sneakers', altas: 'high top sneakers', botas: 'chunky boots', plataformas: 'platform shoes', doradas: 'shiny golden sneakers', neon: 'neon green sneakers' };
 const P_BAG = { bolso: 'crossbody bag', mochila: 'backpack', rinonera: 'fanny pack worn across the chest', capa: 'cape', guitarra: 'guitar on the back', alas: 'small white angel wings on the back' };
-const P_ITEM = { llavero: 'keychain hanging from the belt', botella: 'holding a water bottle', auriculares: 'headphones around the neck', movil: 'holding a phone', mancuerna: 'holding a dumbbell', handycam: 'holding a small camcorder', skate: 'holding a skateboard', chestOpen: 'a small golden treasure chest at the feet',
-  raqueta: 'holding a tennis racket', pesarusa: 'holding a kettlebell', cafe: 'holding a coffee cup', libro: 'holding a book', microfono: 'holding a microphone', helado: 'holding an ice cream', perro: 'a small cute dog at the feet', gatito: 'a small cute cat at the feet', balon: 'a ball at the feet', toalla: 'a towel over the shoulder' };
+const P_ITEM = { llavero: 'keychain hanging from the belt', auriculares: 'headphones around the neck', toalla: 'a towel over the shoulder' };   // lo de manos y pies lo pega la app encima
 const P_WHO = { chica: 'girl', chico: 'boy', neutro: 'young person' };
 /** Traduce el personaje del editor a la descripción que entiende el generador. */
 function lookToPrompt(look, items) {

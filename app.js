@@ -1295,7 +1295,7 @@ function viewAccount() {
     <p class="hint">¿Primera vez? Pon tu email y una contraseña nueva y dale a Crear cuenta. Si ya tienes, dale a Entrar.</p></section>`;
 }
 function viewAxis(state, look = S.look) {
-  if (look === S.look && S.avatarUrl) return `<div class="char ill mood-${state}" aria-hidden="true"><img src="${esc(S.avatarUrl)}" alt=""></div>`;
+  if (look === S.look && S.avatarUrl) return `<div class="char ill mood-${state}" aria-hidden="true">${illImg(S.avatarUrl, Character.image(look, { items: wearing(), mood: state }), '', wearing())}</div>`;
   const src = Character.image(look, { items: wearing(), mood: state });
   return `<div class="char mood-${state}" aria-hidden="true"><img src="${src}" alt="">${state === 'tired' ? '<span class="zzz">z<b>z</b></span>' : ''}</div>`;
 }
@@ -1312,12 +1312,59 @@ const viewColorPicker = (current, act, field = '') => {
 const avatarLatest = id => (CONFIG && CONFIG.supabaseUrl && id ? `${CONFIG.supabaseUrl}/storage/v1/object/public/avatares/${id}/latest.png?d=${today()}` : null);
 const illOf = r => (r.look && r.look.avatar) || (r.me ? S.avatarUrl : null) || avatarLatest(r.user_id);
 /** Imagen ilustrada con vuelta al pixel art si no existe todavía. */
-const illImg = (src, fallback, cls = '') => `<img ${cls ? `class="${cls}"` : ''} src="${esc(src)}" alt="" onerror="this.onerror=null;this.src='${fallback}';this.classList.add('pix');var p=this.parentNode;if(p&&p.classList)p.classList.remove('ill')">`;
+const illImg = (src, fallback, cls = '', items) => { const it = overlayItems(items); return `<img ${cls ? `class="${cls}"` : ''} src="${esc(src)}" ${it.length ? `data-items="${it.join(',')}" data-src="${esc(src)}"` : ''} alt="" onerror="this.onerror=null;this.removeAttribute('data-items');this.src='${fallback}';this.classList.add('pix');var p=this.parentNode;if(p&&p.classList)p.classList.remove('ill')">`; };
+// Objetos encima del personaje ilustrado: la IA no los dibuja fiables, así que se pegan aquí.
+// Posiciones sobre el avatar de 360x720: manos a la altura de y 475, pies hasta y 700.
+const HANDS = { R: [86, 476], L: [274, 476] };
+const ITEM_FIT = {
+  botella: { h: 92, ay: 0.55 }, movil: { h: 66, ay: 0.5 }, mancuerna: { w: 84, ay: 0.5 }, handycam: { w: 84, ay: 0.55 },
+  raqueta: { h: 160, ay: 0.86 }, pesarusa: { h: 82, ay: 0.18 }, cafe: { h: 72, ay: 0.55 }, libro: { h: 78, ay: 0.5 },
+  microfono: { h: 96, ay: 0.62 }, helado: { h: 84, ay: 0.78 }, skate: { w: 200, ay: 0.5, rot: -84, at: 'R' },
+  perro: { h: 112, feet: true }, gatito: { h: 104, feet: true }, balon: { h: 70, feet: true }, chestOpen: { w: 104, feet: true },
+};
+const overlayItems = items => (items || []).filter(k => ITEM_FIT[k]);
+const dressCache = new Map();
+function dressAvatar(src, items) {
+  const key = src + '|' + items.join(',');
+  if (!dressCache.has(key)) dressCache.set(key, new Promise((ok, ko) => {
+    const load = u => new Promise((res, rej) => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => res(im); im.onerror = rej; im.src = u; });
+    Promise.all([load(src), ...items.map(k => load(`assets/items3d/${k}.png`))]).then(([base, ...ims]) => {
+      const k = base.naturalWidth / 360, cv = document.createElement('canvas'); cv.width = base.naturalWidth; cv.height = base.naturalHeight;
+      const ctx = cv.getContext('2d'), front = [];
+      ctx.drawImage(base, 0, 0);
+      items.forEach((key, i) => {
+        const f = ITEM_FIT[key], im = ims[i], r = im.naturalWidth / im.naturalHeight;
+        const w = (f.w || f.h * r) * k, h = (f.h || f.w / r) * k;
+        const it = ALL_ITEMS.find(x => x.key === key) || {};
+        ctx.save();
+        if (f.feet) {   // mascotas y cosas del suelo: al lado del pie, delante del personaje
+          ctx.shadowColor = 'rgba(40,25,15,.25)'; ctx.shadowBlur = 8 * k; ctx.shadowOffsetY = 3 * k;
+          ctx.drawImage(im, 300 * k - w / 2, 712 * k - h, w, h);
+        } else {
+          const [hx, hy] = HANDS[f.at || it.slot] || HANDS.R;
+          ctx.translate(hx * k, hy * k); if (f.rot) ctx.rotate(f.rot * Math.PI / 180);
+          ctx.shadowColor = 'rgba(40,25,15,.22)'; ctx.shadowBlur = 5 * k; ctx.shadowOffsetY = 2 * k;
+          ctx.drawImage(im, -w / 2, -h * (f.ay ?? 0.5), w, h);
+        }
+        ctx.restore();
+      });
+      ok(cv.toDataURL('image/png'));
+    }).catch(ko);
+  }));
+  return dressCache.get(key);
+}
+function dressAvatars(root = document) {
+  root.querySelectorAll('img[data-items]').forEach(img => {
+    const src = img.dataset.src, items = img.dataset.items.split(',');
+    img.removeAttribute('data-items');
+    dressAvatar(src, items).then(u => { if (img.isConnected && !img.classList.contains('pix')) img.src = u; }).catch(() => dressCache.delete(src + '|' + items.join(',')));
+  });
+}
 function avatar(r) {
   const bg = colorHex(r.color);
   if (r.photo) return `<span class="ava" style="background:${bg}"><img src="${esc(r.photo)}" alt=""></span>`;
   const ill = illOf(r);
-  if (ill && r.look) return `<span class="ava ill" style="background:${bg}">${illImg(ill, Character.face(r.look))}</span>`;
+  if (ill && r.look) return `<span class="ava ill" style="background:${bg}">${illImg(ill, Character.face(r.look), '', r.look.items)}</span>`;
   if (r.look) return `<span class="ava pix" style="background:${bg}"><img src="${Character.face(r.look)}" alt=""></span>`;
   return `<span class="ava" style="background:${bg};color:${inkFor(bg)}">${esc((r.name || '?').trim().charAt(0).toUpperCase() || '?')}</span>`;
 }
@@ -1392,8 +1439,10 @@ const avatarUsed = () => S.purchases.filter(p => p.avatar).length;
 const avatarFreeLeft = () => Math.max(0, AVATAR_FREE - avatarUsed());
 const avatarCost = () => (avatarFreeLeft() > 0 ? 0 : AVATAR_COST);   // los 5 primeros cambios son gratis
 /** Lo que define al personaje: si cambia respecto a lo último enviado, hay cambios por enviar. */
-const avatarSpecKey = () => JSON.stringify({ look: Object.assign({}, Character.upgrade(S.look)), items: wearing().slice().sort() });
-const avatarPending = () => !S.avatarUrl || S.avatarSent !== avatarSpecKey();
+// Los objetos que se pegan encima no cuentan: cambiarlos no pide personaje nuevo
+const avatarSpecKey = () => JSON.stringify({ look: Object.assign({}, Character.upgrade(S.look)), items: wearing().filter(k => P_ITEM[k]).sort() });
+const specNorm = k => { try { const o = JSON.parse(k); o.items = (o.items || []).filter(i => P_ITEM[i]).sort(); return JSON.stringify(o); } catch { return k; } };
+const avatarPending = () => !S.avatarUrl || specNorm(S.avatarSent) !== avatarSpecKey();
 const COLOR_NAMES = [['black', 20, 20, 22], ['charcoal grey', 60, 58, 62], ['grey', 140, 138, 140], ['light grey', 205, 203, 200], ['white', 245, 243, 238], ['cream', 236, 226, 205], ['beige', 201, 188, 164],
   ['brown', 110, 70, 45], ['dark brown', 60, 36, 24], ['light brown', 160, 115, 75], ['blonde', 210, 170, 100], ['platinum blonde', 232, 220, 192], ['red', 200, 50, 45], ['ginger', 184, 67, 44], ['burgundy', 110, 30, 40],
   ['orange', 230, 130, 40], ['yellow', 242, 193, 78], ['olive green', 74, 90, 58], ['green', 63, 140, 71], ['mint green', 150, 220, 180], ['neon green', 63, 224, 160], ['teal', 40, 130, 130], ['light blue', 140, 175, 215],
@@ -1415,8 +1464,8 @@ const P_BOTTOM = { cargo: 'baggy cargo pants', vaqueros: 'baggy wide leg jeans',
 const P_LEGS = { medias: 'tights', rejilla: 'fishnet tights', rayas: 'striped tights' };
 const P_SHOES = { bambas: 'chunky sneakers', altas: 'high top sneakers', botas: 'chunky boots', plataformas: 'platform shoes', doradas: 'shiny golden sneakers', neon: 'neon green sneakers' };
 const P_BAG = { bolso: 'crossbody bag', mochila: 'backpack', rinonera: 'fanny pack worn across the chest', capa: 'cape', guitarra: 'guitar on the back', alas: 'small white angel wings on the back' };
-const P_ITEM = { llavero: 'keychain hanging from the belt', botella: 'holding a water bottle', auriculares: 'headphones around the neck', movil: 'holding a phone', mancuerna: 'holding a dumbbell', handycam: 'holding a small camcorder', skate: 'holding a skateboard', chestOpen: 'a small golden treasure chest at the feet',
-  raqueta: 'holding a tennis racket', pesarusa: 'holding a kettlebell', cafe: 'holding a coffee cup', libro: 'holding a book', microfono: 'holding a microphone', helado: 'holding an ice cream', perro: 'a small cute dog at the feet', gatito: 'a small cute cat at the feet', balon: 'a ball at the feet', toalla: 'a towel over the shoulder' };
+// Solo lo que va puesto encima del cuerpo; lo de las manos y los pies se pega luego (ITEM_FIT)
+const P_ITEM = { llavero: 'keychain hanging from the belt', auriculares: 'headphones around the neck', toalla: 'a towel over the shoulder' };
 const P_WHO = { chica: 'girl', chico: 'boy', neutro: 'young person' };
 /** Traduce el personaje del editor a la descripción que entiende el generador. */
 function lookToPrompt(look, items) {
@@ -1617,7 +1666,7 @@ function viewPlaza(rows) {
     const m = playerMood(r), bg = colorHex(r.color);
     return `<button class="pl m-${m} ${r.me ? 'me' : ''} ${extra}" style="left:${x}%;bottom:calc(${b}% - 3px);--s:${sc};z-index:${extra.includes('podium') ? 80 : b < 10 ? 70 : Math.round(55 - b)}" data-act="openPlayer" data-id="${esc(r.user_id)}" aria-label="${esc(r.name)}">
       <span class="tag" style="background:${bg};color:${inkFor(bg)}">${esc(r.name)}</span>${extra.includes('first') ? `<img class="crown" src="${Scene.crown()}" alt="">` : ''}
-      ${illOf(r) ? illImg(illOf(r), playerPixel(r), 'pl-img ill-img') : `<img class="pl-img" src="${playerPixel(r)}" alt="">`}${m === 'tired' ? '<span class="zzz">z<b>z</b></span>' : ''}</button>`;
+      ${illOf(r) ? illImg(illOf(r), playerPixel(r), 'pl-img ill-img', r.look && r.look.items) : `<img class="pl-img" src="${playerPixel(r)}" alt="">`}${m === 'tired' ? '<span class="zzz">z<b>z</b></span>' : ''}</button>`;
   };
   const hidden = others.length - placed.length;
   return html`<section class="plaza plaza3d">
@@ -1633,7 +1682,7 @@ function viewPlayer() {
   const pos = Math.max(1, rows.findIndex(x => x.user_id === r.user_id) + 1), bg = colorHex(r.color), ink = inkFor(bg), m = playerMood(r);
   const items = ALL_ITEMS.filter(i => ((r.look && r.look.items) || []).includes(i.key));
   return html`<section class="c-hero player-hero" style="--hero-bg:${bg};--hero-ink:${ink}" data-ink="${ink === '#111111' ? 'dark' : 'light'}">
-      <div class="player-top"><div class="player-char ${'m-' + m}">${illOf(r) ? illImg(illOf(r), playerPixel(r), 'ill-img') : `<img src="${playerPixel(r)}" alt="">`}</div>
+      <div class="player-top"><div class="player-char ${'m-' + m}">${illOf(r) ? illImg(illOf(r), playerPixel(r), 'ill-img', r.look && r.look.items) : `<img src="${playerPixel(r)}" alt="">`}</div>
         <div class="player-info"><span class="pill">${GLYPH.trophy}${pos}º esta semana</span><h2>${esc(r.name)}</h2><p>Nivel ${r.level} · ${rankFor(r.level)}</p><p class="mood-chip">${MOOD_TEXT[m]}</p></div></div></section>
     <section class="panel"><h3>Esta semana</h3>
       <div class="trio"><div><b class="num">${r.week_xp}</b><span>XP</span></div><div><b class="num">${r.streak}</b><span>${r.streak === 1 ? 'día seguido' : 'días seguidos'}</span></div><div><b class="num">${r.chests_week}</b><span>${r.chests_week === 1 ? 'cofre' : 'cofres'}</span></div></div>
@@ -2357,6 +2406,7 @@ function render() {
     + `<datalist id="ex-list">${COMMON_EXERCISES.map(n => `<option value="${n}">`).join('')}</datalist>`;
   nav.innerHTML = viewNav();
   enhance();
+  dressAvatars();
   scroller().scrollTop = y;
 }
 
