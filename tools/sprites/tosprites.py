@@ -31,9 +31,10 @@ def convert(col, R, kind):
             v=L[y,x]; out[y,x]='1' if v>M+20 else ('4' if v<M-55 else ('3' if v<M-16 else '2'))
     # piel: sombreado procedural (luz arriba a la izquierda)
     skm=(out=='p')
+    runm=skm|(dark&(np.arange(h)[:,None]<0.4*h))|(np.isin(out,['k']))
     def run(y,x,dy,dx):
         n=0
-        while 0<=y+dy*(n+1)<h and 0<=x+dx*(n+1)<w and R[y+dy*(n+1),x+dx*(n+1)]: n+=1
+        while 0<=y+dy*(n+1)<h and 0<=x+dx*(n+1)<w and runm[y+dy*(n+1),x+dx*(n+1)]: n+=1
         return n
     for y,x in zip(*np.where(skm)):
         l,r_,t,d=run(y,x,0,-1),run(y,x,0,1),run(y,x,-1,0),run(y,x,1,0)
@@ -125,12 +126,13 @@ for f in sorted(glob.glob(D+'/*_al.npy')):
             al=(al&~skn)|hole
         else:
             al=al&~skn
+    else:
+        al=al&~isskin(col)                      # brazos y piernas los pone el maniquí
+        if n.startswith('top_'):
+            Hh,Ww=al.shape; yy=np.arange(Hh)[:,None]; xx=np.arange(Ww)[None,:]
+            hz=(yy>=round(43*Hh/72))&((xx<=round(12*Ww/40))|(xx>=round(27*Ww/40)))
+            al=al&~(hz&(col.mean(-1)<120))
     out=convert(col,al,n.split('_')[0])
-    if n.startswith('top_'):
-        Hh,Ww=out.shape
-        for y in range(round(43*Hh/72),Hh):
-            for x in range(Ww):
-                if (x<=round(12*Ww/40) or x>=round(27*Ww/40)) and out[y,x] in 'oOspqrka4': out[y,x]='.'
     out=prune(out, 3 if n.startswith('glasses') else 8)
     c=crop(out)
     if c: S[n]=c
