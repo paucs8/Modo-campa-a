@@ -11,8 +11,8 @@ const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE
 webpush.setVapidDetails('mailto:avisos@modo-campana.app', Deno.env.get('VAPID_PUBLIC_KEY')!, Deno.env.get('VAPID_PRIVATE_KEY')!);
 
 // Avisos que se mandan aunque no sea uno de tus rivales (son cosas que te mandan a ti directamente)
-const DIRECT = ['duel', 'invite'];
-const KINDS = ['nudge', 'duel', 'invite', 'react', 'overtake'];
+const DIRECT = ['duel', 'invite', 'avatar'];
+const KINDS = ['nudge', 'duel', 'invite', 'react', 'overtake', 'avatar'];
 
 type Sub = { endpoint: string; p256dh: string; auth: string; user_id: string; kinds: string[]; rivals: string[]; hour: number; hour2: number | null; done_day: string | null };
 
@@ -74,7 +74,12 @@ Deno.serve(async req => {
   const from = auth?.user;
   if (!from) return json({ error: 'sin sesión' }, 401);
   const { to, kind, title, text, url } = body as { to?: string; kind?: string; title?: string; text?: string; url?: string };
-  if (!to || to === from.id || !kind || !KINDS.includes(kind) || !title) return json({ error: 'datos' }, 400);
+  if (!to || !kind || !KINDS.includes(kind) || !title || (to === from.id && kind !== 'avatar')) return json({ error: 'datos' }, 400);
+  // «Tu personaje está listo» solo lo puede mandar el ordenador que genera (cuenta de admin)
+  if (kind === 'avatar') {
+    const { data: isAdmin } = await admin.from('admins').select('user_id').eq('user_id', from.id).maybeSingle();
+    if (!isAdmin) return json({ error: 'no' }, 403);
+  }
 
   // Que no se pueda usar para mandar spam: máximo 30 avisos por hora de cada jugador
   const since = new Date(Date.now() - 3600_000).toISOString();
@@ -83,7 +88,7 @@ Deno.serve(async req => {
   await admin.from('push_log').insert({ from_id: from.id, to_id: to, kind });
 
   const { data: subs } = await admin.from('push_subs').select('*').eq('user_id', to);
-  const ok = (subs || []).filter((s: Sub) => s.kinds.includes(kind) && (DIRECT.includes(kind) || !s.rivals.length || s.rivals.includes(from.id)));
+  const ok = (subs || []).filter((s: Sub) => (kind === 'avatar' || s.kinds.includes(kind)) && (DIRECT.includes(kind) || !s.rivals.length || s.rivals.includes(from.id)));
   const sent = await sendTo(ok, { title: String(title).slice(0, 80), body: String(text || '').slice(0, 160), url: url || './', tag: kind });
   return json({ ok: true, sent });
 });

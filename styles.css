@@ -1050,3 +1050,11 @@ body.sheet-open .nav{opacity:0;pointer-events:none;transform:translate(-50%,140%
 .lv-opts{display:flex;gap:10px;justify-content:center}
 .lv-opts img{width:52px;height:52px;image-rendering:pixelated;background:rgba(255,255,255,.5);border-radius:14px;padding:6px}
 .item.locked img{filter:brightness(0) invert(.35);opacity:.5}
+
+/* ---------- Personaje ilustrado (generado en el ordenador de Pau) ---------- */
+.char.ill img,.look-preview .char.ill img,.player-char img[src^="http"],.pl-img[src^="http"]{image-rendering:auto;object-fit:contain}
+.char.ill.mood-happy,.char.ill.mood-proud,.char.ill.mood-fire{animation:none}
+.ava.ill img,.big-ava.ill img{image-rendering:auto;object-fit:cover;object-position:50% 0;transform:scale(1.5);transform-origin:50% 0}
+.avatar-panel .avatar-status{font-weight:800;margin:10px 0 6px}
+.avatar-panel .avatar-status.st-error{color:#B8432C}
+.top .avatar.ill img{image-rendering:auto;object-fit:cover;object-position:50% 0;transform:scale(1.5);transform-origin:50% 0}

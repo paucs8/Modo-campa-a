@@ -375,7 +375,7 @@ function migrate(s) {
   delete s.look.preset; delete s.look.star;
   s.look = Character.upgrade(s.look); // personaje por capas (v2)
   // Armario especial, semanas ganadas, cierre del lunes visto y cañas enviadas
-  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {}; s.feedSent = s.feedSent || {}; s.shields = s.shields || 0; s.shielded = s.shielded || []; s.coinLog = s.coinLog || []; s.duelsSettled = s.duelsSettled || {}; s.duelBase = s.duelBase || {}; s.vouchersDone = s.vouchersDone || {}; s.rivals = s.rivals || []; fairCampaigns(s); s.dailyItems = s.dailyItems || []; s.dailyDone = s.dailyDone || {}; s.passed = s.passed || {}; if (s.rivalsOnly === undefined) s.rivalsOnly = true;
+  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {}; s.feedSent = s.feedSent || {}; s.shields = s.shields || 0; s.shielded = s.shielded || []; s.coinLog = s.coinLog || []; s.duelsSettled = s.duelsSettled || {}; s.duelBase = s.duelBase || {}; s.vouchersDone = s.vouchersDone || {}; s.rivals = s.rivals || []; fairCampaigns(s); s.dailyItems = s.dailyItems || []; s.dailyDone = s.dailyDone || {}; s.passed = s.passed || {}; if (s.rivalsOnly === undefined) s.rivalsOnly = true; if (s.avatarUrl === undefined) s.avatarUrl = null; s.avatarReq = s.avatarReq || null; s.avatarRefunds = s.avatarRefunds || [];
   if (s.photo === undefined) s.photo = null;
   s.v = 5;
   return s;
@@ -759,7 +759,7 @@ async function publishProfile() {
   const xp = totalXP();
   const row = { user_id: cloud.user.id, name: S.name.slice(0, 24), color: S.color, level: levelOf(xp), xp,
     week: mondayKey(), week_xp: weekXP(), streak: activeStreak(), chests_week: chestsThisWeek(), updated_at: new Date().toISOString() };
-  const extras = { photo: S.photo, look: Object.assign({}, S.look, { items: wearing() }) }, prev = { prev_week: lastMondayKey(), prev_week_xp: myPrevWeekXP() };
+  const extras = { photo: S.photo, look: Object.assign({}, S.look, { items: wearing(), avatar: S.avatarOff ? null : (S.avatarUrl || null) }) }, prev = { prev_week: lastMondayKey(), prev_week_xp: myPrevWeekXP() };
   // Si a la tabla le faltan columnas (SQL sin ejecutar), se publica lo que se pueda
   const tries = [[ui.profileExtras, ui.prevCols], [ui.profileExtras, false], [false, false]].filter(([e, p], i, a) => i === 0 || (e !== a[0][0] || p !== a[0][1]));
   let error = null;
@@ -1171,6 +1171,7 @@ async function startSync(user, { fresh = false } = {}) {
   loadRanking();
   loadNudges();
   loadIdeas();
+  checkAvatar();
 }
 function stopSync() {
   if (cloud.channel) cloud.client.removeChannel(cloud.channel);
@@ -1190,7 +1191,7 @@ async function initCloud() {
     if (event === 'SIGNED_IN' && session && (!cloud.user || cloud.user.id !== session.user.id)) startSync(session.user, { fresh: true });
     if (event === 'SIGNED_OUT') stopSync();
   });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { pull(); loadRanking(); } });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { pull(); loadRanking(); checkAvatar(); } });
   window.addEventListener('online', () => pull());
 }
 document.addEventListener('focusout', () => setTimeout(() => {
@@ -1224,7 +1225,7 @@ const bar = (p, cls = 'bar') => `<div class="${cls}"><i style="width:${p * 100}%
 
 function viewTop() {
   const d = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short' });
-  return html`<header class="top"><button class="avatar" data-act="open" data-id="profile" aria-label="Tu perfil"><img src="${S.photo || Character.face(S.look)}" alt="" class="${S.photo ? 'photo' : ''}"></button>${pendingIdeas() ? `<button class="idea-badge num" data-act="open" data-id="ideas" aria-label="${pendingIdeas()} ideas nuevas en el buzón">${pendingIdeas()}</button>` : ''}
+  return html`<header class="top"><button class="avatar ${!S.photo && S.avatarUrl && !S.avatarOff ? 'ill' : ''}" data-act="open" data-id="profile" aria-label="Tu perfil"><img src="${S.photo || (S.avatarUrl && !S.avatarOff ? esc(S.avatarUrl) : Character.face(S.look))}" alt="" class="${S.photo ? 'photo' : ''}"></button>${pendingIdeas() ? `<button class="idea-badge num" data-act="open" data-id="ideas" aria-label="${pendingIdeas()} ideas nuevas en el buzón">${pendingIdeas()}</button>` : ''}
     <div class="hello"><b>Hola, ${esc(S.name)}</b><span>${esc(d[0].toUpperCase() + d.slice(1))}</span></div>
     <button class="sync" id="sync" data-s="${ui.sync}" title="${SYNC_LABEL[ui.sync]}" aria-label="${SYNC_LABEL[ui.sync]}" data-act="syncInfo"><i></i></button></header>`;
 }
@@ -1246,6 +1247,7 @@ function viewAccount() {
     <p class="hint">¿Primera vez? Pon tu email y una contraseña nueva y dale a Crear cuenta. Si ya tienes, dale a Entrar.</p></section>`;
 }
 function viewAxis(state, look = S.look) {
+  if (look === S.look && S.avatarUrl && !S.avatarOff) return `<div class="char ill mood-${state}" aria-hidden="true"><img src="${esc(S.avatarUrl)}" alt=""></div>`;
   const src = Character.image(look, { items: wearing(), mood: state });
   return `<div class="char mood-${state}" aria-hidden="true"><img src="${src}" alt="">${state === 'tired' ? '<span class="zzz">z<b>z</b></span>' : ''}</div>`;
 }
@@ -1262,6 +1264,7 @@ const viewColorPicker = (current, act, field = '') => {
 function avatar(r) {
   const bg = colorHex(r.color);
   if (r.photo) return `<span class="ava" style="background:${bg}"><img src="${esc(r.photo)}" alt=""></span>`;
+  if (r.look && r.look.avatar) return `<span class="ava ill" style="background:${bg}"><img src="${esc(r.look.avatar)}" alt=""></span>`;
   if (r.look) return `<span class="ava pix" style="background:${bg}"><img src="${Character.face(r.look)}" alt=""></span>`;
   return `<span class="ava" style="background:${bg};color:${inkFor(bg)}">${esc((r.name || '?').trim().charAt(0).toUpperCase() || '?')}</span>`;
 }
@@ -1330,10 +1333,91 @@ const chip = (field, value, label, current) => {
   if (!lock.ok) return `<button type="button" class="chip-btn locked" data-act="lockedLook" data-k="${field}:${value}" title="${esc(lock.how)}">${GLYPH.lock}${label} <small>${esc(lock.short)}</small></button>`;
   return `<button type="button" class="chip-btn ${Character.PREMIUM[field + ':' + value] ? 'special' : ''}" data-act="setLook" data-f="${field}" data-v="${value}" aria-pressed="${String(current) === String(value)}">${label}</button>`;
 };
+/* ---------- Personaje ilustrado: se pide desde aquí y lo genera el ordenador de Pau ---------- */
+const AVATAR_COST = 40;
+const avatarCost = () => (S.purchases.some(p => p.avatar) ? AVATAR_COST : 0);   // el primero es gratis
+const COLOR_NAMES = [['black', 20, 20, 22], ['charcoal grey', 60, 58, 62], ['grey', 140, 138, 140], ['light grey', 205, 203, 200], ['white', 245, 243, 238], ['cream', 236, 226, 205], ['beige', 201, 188, 164],
+  ['brown', 110, 70, 45], ['dark brown', 60, 36, 24], ['light brown', 160, 115, 75], ['blonde', 210, 170, 100], ['platinum blonde', 232, 220, 192], ['red', 200, 50, 45], ['ginger', 184, 67, 44], ['burgundy', 110, 30, 40],
+  ['orange', 230, 130, 40], ['yellow', 242, 193, 78], ['olive green', 74, 90, 58], ['green', 63, 140, 71], ['mint green', 150, 220, 180], ['neon green', 63, 224, 160], ['teal', 40, 130, 130], ['light blue', 140, 175, 215],
+  ['blue', 60, 100, 200], ['navy blue', 34, 56, 94], ['denim blue', 70, 95, 140], ['purple', 120, 80, 180], ['lavender', 170, 140, 240], ['pink', 229, 138, 176], ['hot pink', 240, 70, 150], ['gold', 232, 184, 74]];
+function colorName(hex) {
+  const h = String(hex || '').replace('#', ''); if (h.length < 6) return '';
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16));
+  return COLOR_NAMES.reduce((best, c) => { const d = (c[1] - r) ** 2 + (c[2] - g) ** 2 + (c[3] - b) ** 2; return d < best.d ? { d, n: c[0] } : best; }, { d: 1e9, n: '' }).n;
+}
+function skinName(hex) {
+  const h = String(hex || '#F1C8A5').replace('#', ''), l = [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16)).reduce((a, v) => a + v, 0) / 3;
+  return l > 215 ? 'very fair' : l > 190 ? 'fair' : l > 165 ? 'light tan' : l > 135 ? 'tan' : l > 100 ? 'brown' : 'dark brown';
+}
+const P_HAIR = { corto: 'short neat hair', revuelto: 'messy tousled hair', rapado: 'a buzz cut', melena: 'a chin length bob haircut', largo: 'long straight hair', mono: 'hair in a high bun', coletas: 'two high pigtails', trenzas: 'two long braids', rizos: 'short curly hair', afro: 'a big round afro', cresta: 'a spiky mohawk' };
+const P_GLASSES = { finas: 'thin round glasses', pasta: 'thick black rectangular glasses', sol: 'black sunglasses', estrella: 'star shaped sunglasses', corazon: 'heart shaped sunglasses', vr: 'a futuristic visor' };
+const P_HEAD = { gorra: 'baseball cap', gorro: 'knitted beanie', bucket: 'bucket hat', bandana: 'bandana', horquillas: 'hair clips', gato: 'beanie with cat ears', corona: 'small golden crown', vikingo: 'viking helmet with horns', halo: 'golden halo floating above the head' };
+const P_TOP = { camiseta: 'oversized t-shirt', sudadera: 'oversized hoodie', jersey: 'oversized knit sweater', capas: 'oversized t-shirt layered over a long sleeve shirt', camisa: 'open oversized shirt over a t-shirt', chaqueta: 'oversized open bomber jacket over a t-shirt' };
+const P_BOTTOM = { cargo: 'baggy cargo pants', vaqueros: 'baggy wide leg jeans', chandal: 'baggy track pants with side stripes', corto: 'loose shorts', falda: 'pleated mini skirt' };
+const P_LEGS = { medias: 'tights', rejilla: 'fishnet tights', rayas: 'striped tights' };
+const P_SHOES = { bambas: 'chunky sneakers', altas: 'high top sneakers', botas: 'chunky boots', plataformas: 'platform shoes', doradas: 'shiny golden sneakers', neon: 'neon green sneakers' };
+const P_BAG = { bolso: 'crossbody bag', mochila: 'backpack', rinonera: 'fanny pack worn across the chest', capa: 'cape', guitarra: 'guitar on the back', alas: 'small white angel wings on the back' };
+const P_ITEM = { llavero: 'keychain hanging from the belt', botella: 'holding a water bottle', auriculares: 'headphones around the neck', movil: 'holding a phone', mancuerna: 'holding a dumbbell', handycam: 'holding a small camcorder', skate: 'holding a skateboard', chestOpen: 'a small golden treasure chest at the feet',
+  raqueta: 'holding a tennis racket', pesarusa: 'holding a kettlebell', cafe: 'holding a coffee cup', libro: 'holding a book', microfono: 'holding a microphone', helado: 'holding an ice cream', perro: 'a small cute dog at the feet', gatito: 'a small cute cat at the feet', balon: 'a ball at the feet', toalla: 'a towel over the shoulder' };
+const P_WHO = { chica: 'girl', chico: 'boy', neutro: 'young person' };
+/** Traduce el personaje del editor a la descripción que entiende el generador. */
+function lookToPrompt(look, items) {
+  const L = Character.upgrade(look), c = colorName, parts = [P_WHO[L.gen] || 'young person', `${skinName(L.skin)} skin`];
+  if (L.eyes) parts.push(`${c(L.eyes)} eyes`);
+  parts.push(`${c(L.hair)} ${P_HAIR[L.hairStyle] || 'short hair'}${L.hair2 ? ` with ${c(L.hair2)} tips` : ''}${L.bangs ? ' with bangs' : ''}`);
+  if (L.freckles) parts.push('freckles');
+  if (L.beard && L.beard !== 'no') parts.push(L.beard === 'bigote' ? 'a mustache' : 'a short beard');
+  if (L.glasses && L.glasses !== 'no') parts.push(P_GLASSES[L.glasses]);
+  if (L.head && L.head !== 'no') parts.push(['corona', 'halo'].includes(L.head) ? P_HEAD[L.head] : `${c(L.headColor)} ${P_HEAD[L.head]}`);
+  const PAT = { rayas: `${c(L.stripe)} stripes`, cuadros: `a ${c(L.stripe)} plaid pattern`, franja: `a ${c(L.stripe)} chest stripe`, llamas: 'a flame print', camuflaje: 'a camo print', galaxia: 'a galaxy print', arcoiris: 'a rainbow print' };
+  let top = `${c(L.topColor)} ${P_TOP[L.top] || 'oversized t-shirt'}${L.pattern && L.pattern !== 'liso' && PAT[L.pattern] ? ` with ${PAT[L.pattern]}` : ''}`;
+  if (['capas', 'camisa', 'chaqueta'].includes(L.top)) top += ` (the inner layer is ${c(L.top2)})`;
+  parts.push(top);
+  parts.push(`${c(L.bottomColor)} ${P_BOTTOM[L.bottom] || 'baggy pants'}${L.bottom === 'chandal' ? ` with ${c(L.stripe)} stripes` : ''}`);
+  if ((L.bottom === 'corto' || L.bottom === 'falda') && L.legs && L.legs !== 'piel') parts.push(`${c(L.legsColor)} ${P_LEGS[L.legs]}`);
+  parts.push(['doradas', 'neon'].includes(L.shoes) ? P_SHOES[L.shoes] : `${c(L.shoesColor)} ${P_SHOES[L.shoes] || 'chunky sneakers'}`);
+  if (L.bag && L.bag !== 'no') parts.push(['capa', 'alas', 'guitarra'].includes(L.bag) ? P_BAG[L.bag] : `${c(L.bagColor)} ${P_BAG[L.bag]}`);
+  if (L.necklace) parts.push('a pendant necklace');
+  if (L.chain) parts.push('a silver chain on the pants');
+  if (L.earrings) parts.push('silver earrings');
+  (items || []).forEach(k => { if (P_ITEM[k]) parts.push(P_ITEM[k]); });
+  return parts.filter(Boolean).join(', ');
+}
+const AVATAR_STATUS = { pendiente: '⏳ En cola', generando: '🎨 Generándose ahora', listo: '✅ Listo', error: '⚠️ No se pudo generar' };
+function viewAvatarPanel() {
+  const r = S.avatarReq, cost = avatarCost(), waiting = r && (r.status === 'pendiente' || r.status === 'generando');
+  const who = Character.upgrade(S.look).gen || '';
+  return html`<section class="panel avatar-panel"><h3>Personaje ilustrado</h3>
+    <p class="hint">Con lo que eliges arriba (ropa, colores, objetos que llevas puestos) se dibuja tu personaje en 3D. <b>No es al momento</b>: se genera en el ordenador de Pau y te llega un aviso cuando esté, normalmente en unas horas.</p>
+    <div class="look-row"><span class="label">Eres</span><div class="chips">${Object.entries({ chica: 'Chica', chico: 'Chico', neutro: 'Prefiero no decir' }).map(([k, t]) => `<button type="button" class="chip-btn" data-act="setLook" data-f="gen" data-v="${k}" aria-pressed="${who === k}">${t}</button>`).join('')}</div></div>
+    ${r ? `<p class="avatar-status st-${esc(r.status)}">${AVATAR_STATUS[r.status] || r.status}${r.status === 'error' ? ' · te hemos devuelto las monedas' : ''}</p>` : ''}
+    ${waiting ? '<p class="hint">Cuando esté listo te avisamos. Si cambias algo ahora, tendrás que pedirlo otra vez.</p>'
+      : `<button class="btn primary wide" data-act="buyAvatar" ${!cloud.user ? 'disabled' : ''}>${ui.armed === 'buy:avatar' ? (cost ? `¿Gastar ${cost} monedas?` : '¿Pedirlo ahora?') : (S.avatarUrl ? 'Pedir personaje nuevo' : 'Crear mi personaje')} · ${cost ? `${cost} monedas` : 'gratis'}</button>`}
+    ${!cloud.user ? '<p class="hint">Necesitas cuenta para pedirlo.</p>' : ''}
+    ${S.avatarUrl ? '<div class="edit-row"><button class="btn ghost" data-act="toggleAvatar">' + (S.avatarOff ? 'Usar el ilustrado' : 'Volver al pixel art') + '</button></div>' : ''}</section>`;
+}
+let avatarTimer = null;
+/** Mira cómo va tu último pedido; si está listo se pone solo, si falló se devuelven las monedas. */
+async function checkAvatar() {
+  clearTimeout(avatarTimer);
+  if (!cloud.user || ui.avatarTable === false) return;
+  const { data, error } = await cloud.client.from('avatar_requests').select('id,status,image_url,cost,error').eq('user_id', cloud.user.id).order('id', { ascending: false }).limit(1);
+  if (error) { if (missingTable(error)) ui.avatarTable = false; return; }
+  const r = data && data[0]; if (!r) return;
+  const prev = S.avatarReq || {}, changed = prev.id !== r.id || prev.status !== r.status;
+  if (r.status === 'listo' && r.image_url && S.avatarUrl !== r.image_url) {
+    update(s => { s.avatarUrl = r.image_url; s.avatarOff = false; s.avatarReq = { id: r.id, status: r.status }; }, { reward: false });
+    toast('🎨 ¡Tu personaje ilustrado ya está listo!'); return;
+  }
+  if (r.status === 'error' && r.cost && !S.avatarRefunds.includes(r.id)) {
+    update(s => { s.avatarRefunds.push(r.id); s.coinLog.push({ id: uid(), d: today(), amount: r.cost, note: 'Devolución: personaje no generado' }); s.avatarReq = { id: r.id, status: r.status }; }, { reward: false });
+  } else if (changed) { S.avatarReq = { id: r.id, status: r.status }; render(); }
+  if (r.status === 'pendiente' || r.status === 'generando') avatarTimer = setTimeout(checkAvatar, 120000);
+}
 function viewProfile() {
   const L = Character.upgrade(S.look), xp = totalXP();
   return html`<section class="c-hero profile-hero" ${heroStyle()}>
-    <div class="me-row"><span class="big-ava">${S.photo ? `<img src="${S.photo}" alt="Tu foto">` : `<img class="pix" src="${Character.face(L)}" alt="">`}</span>
+    <div class="me-row"><span class="big-ava ${!S.photo && S.avatarUrl && !S.avatarOff ? 'ill' : ''}">${S.photo ? `<img src="${S.photo}" alt="Tu foto">` : S.avatarUrl && !S.avatarOff ? `<img src="${esc(S.avatarUrl)}" alt="">` : `<img class="pix" src="${Character.face(L)}" alt="">`}</span>
       <div><h2>${esc(S.name || 'Tu perfil')}</h2><p>Nivel ${levelOf(xp)} · ${rankFor(levelOf(xp))}</p></div></div>
     <div class="edit-row"><label class="btn dark file-btn">${S.photo ? 'Cambiar foto' : 'Subir foto'}<input type="file" accept="image/*" data-photo hidden></label>
       ${when(S.photo, '<button class="btn on-color" data-act="removePhoto">Quitar foto</button>')}</div></section>
@@ -1345,6 +1429,7 @@ function viewProfile() {
       <div class="look-editor"><div class="look-preview" style="background:${colorHex(S.color)}">${viewAxis('happy')}</div>
         <div class="look-controls">${viewLookControls(L)}</div></div>
       <p class="hint">Lo que desbloqueas en el inventario (cascos, llavero, handycam, skate) se lo pone tu personaje.</p></section>
+    ${viewAvatarPanel()}
     <button class="teaser idea-teaser" data-act="open" data-id="ideas"><span class="teaser-ico">${GLYPH.star || '+'}</span><span class="txt"><b>Buzón de ideas</b><small>¿Echas algo en falta? Una campaña, un deporte, algo de la app…</small></span><span class="go">${GLYPH.chev}</span></button>
 ${viewPushPanel()}
     <section class="panel"><h3>Cuenta</h3>
@@ -1439,7 +1524,7 @@ function playerMood(r) {
   if (r.streak >= 1) return 'happy';
   return r.xp > 0 ? 'tired' : 'idle';
 }
-const playerImage = r => Character.image(r.look || Character.BASE, { items: (r.look && r.look.items) || [], mood: playerMood(r) });
+const playerImage = r => (r.look && r.look.avatar) ? r.look.avatar : Character.image(r.look || Character.BASE, { items: (r.look && r.look.items) || [], mood: playerMood(r) });
 const MOOD_TEXT = { fire: 'En racha', happy: 'Activo', proud: 'Cofre abierto', tired: 'Lleva días parado', idle: 'Recién llegado' };
 /** La plaza: todos los personajes, los tres primeros en el podio y quien está parado, en el banco. */
 function viewPlaza(rows) {
@@ -2518,6 +2603,21 @@ const actions = {
     ui.invite = ui.invite && ui.invite.key === it.key ? null : { key: it.key, to: null }; render();
   },
   pickInviter: el => { ui.invite.to = el.dataset.id; ui.armed = null; render(); },
+  buyAvatar: async el => {
+    if (!cloud.user) return;
+    const cost = avatarCost();
+    if (coins() < cost) { toast(`Te faltan ${cost - coins()} monedas`); return; }
+    if (!Character.upgrade(S.look).gen) { toast('Elige primero si eres chica o chico'); return; }
+    if (ui.armed !== 'buy:avatar') { ui.armed = 'buy:avatar'; render(); return; }
+    ui.armed = null; el.disabled = true;
+    const items = wearing(), spec = Object.assign({}, Character.upgrade(S.look), { items });
+    const { data, error } = await cloud.client.from('avatar_requests').insert({ user_id: cloud.user.id, name: S.name, spec, prompt: lookToPrompt(S.look, items), cost }).select('id,status').maybeSingle();
+    if (error) { toast(missingTable(error) ? 'Falta activar los personajes en Supabase' : 'No se pudo pedir'); el.disabled = false; return; }
+    update(s => { s.purchases.push({ id: uid(), name: 'Personaje ilustrado', cost, d: today(), avatar: data && data.id }); s.avatarReq = { id: data && data.id, status: 'pendiente' }; }, { reward: false });
+    toast('⏳ Pedido enviado. Te avisamos cuando esté listo');
+    avatarTimer = setTimeout(checkAvatar, 120000);
+  },
+  toggleAvatar: () => { update(s => { s.avatarOff = !s.avatarOff; }, { reward: false }); },
   buyInvite: async el => {
     const inv = ui.invite, it = inviteOf(inv && inv.key), f = (ui.ranking || []).find(r => r.user_id === (inv && inv.to));
     if (!inv || !f || coins() < it.cost) return;
