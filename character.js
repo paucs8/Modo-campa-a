@@ -97,7 +97,13 @@ const tint = (c, f) => c.map(v => Math.round(v + (255 - v) * f));
 const mix = (a, b, t) => a.map((v, i) => Math.round(v * (1 - t) + b[i] * t));
 const WARM = [60, 36, 40];   // las sombras tiran a cálido, no a gris
 /** Cuatro tonos por pieza: luz, base y dos sombras. */
-const tones = hex => { const b = Array.isArray(hex) ? hex : rgb(hex); return { hi: tint(b, 0.16), base: b, s1: mix(mul(b, 0.78), WARM, 0.12), s2: mix(mul(b, 0.58), WARM, 0.22) }; };
+let HD = false;   // estilo con más acabado: luces cálidas, sombras frías, luz de contorno y oclusión
+const SUN = [255, 232, 176], COOL = [64, 52, 120], DEEP = [34, 24, 70];
+const tones = hex => {
+  const b = Array.isArray(hex) ? hex : rgb(hex);
+  if (HD) return { hi: mix(tint(b, 0.26), SUN, 0.26), base: b, s1: mix(mul(b, 0.74), COOL, 0.24), s2: mix(mul(b, 0.5), DEEP, 0.4) };
+  return { hi: tint(b, 0.16), base: b, s1: mix(mul(b, 0.78), WARM, 0.12), s2: mix(mul(b, 0.58), WARM, 0.22) };
+};
 /** Cambia un tono de una pieza por el equivalente en otra (para estampados). */
 const retone = (c, A, B) => (c === A.hi ? B.hi : c === A.s1 ? B.s1 : c === A.s2 ? B.s2 : B.base);
 const INK = [42, 30, 28], WHITE = [246, 240, 230], METAL = [176, 172, 168], GOLD = [226, 176, 70], RED = [200, 66, 56], DARK = [38, 32, 30], PINK = [233, 127, 176];
@@ -522,13 +528,37 @@ function paint(input, { items = [], closed = false, mood = 'idle' } = {}) {
     const c = f < 1 ? mul([px[i], px[i + 1], px[i + 2]], f) : tint([px[i], px[i + 1], px[i + 2]], 0.06);
     lit[i] = c[0]; lit[i + 1] = c[1]; lit[i + 2] = c[2];
   }
+  if (HD) {
+    const get = (a, x, y) => { const i = (y * W + x) * 4; return [a[i], a[i + 1], a[i + 2]]; };
+    const put = (a, x, y, c) => { const i = (y * W + x) * 4; a[i] = c[0]; a[i + 1] = c[1]; a[i + 2] = c[2]; };
+    const src = new Uint8ClampedArray(lit);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const zz = zoneAt(x, y); if (zz <= 0) continue;
+      let c = get(src, x, y);
+      // Oclusión: un segundo píxel de sombra suave bajo lo que tapa
+      if (y > 1 && zoneAt(x, y - 2) !== zz && zoneAt(x, y - 2) > zz && zoneAt(x, y - 1) === zz) c = mix(c, DEEP, 0.1);
+      // Luz de contorno fría por la derecha (como si hubiera una ventana detrás)
+      if (!filled(x + 1, y) && filled(x - 1, y)) c = mix(c, [176, 206, 255], 0.22);
+      // Brillo cálido por arriba a la izquierda
+      if (!filled(x - 1, y) && !filled(x, y - 1)) c = mix(c, SUN, 0.25);
+      put(lit, x, y, c);
+    }
+  }
   const out = new Uint8ClampedArray(lit);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     if (filled(x, y)) continue;
     const n = [[0, 1], [0, -1], [1, 0], [-1, 0]].find(([dx, dy]) => filled(x + dx, y + dy));
     if (!n) continue;
-    const j = ((y + n[1]) * W + x + n[0]) * 4, c = mix(mul([lit[j], lit[j + 1], lit[j + 2]], 0.35), INK, 0.55), i = (y * W + x) * 4;
+    // En el estilo HD el contorno es más claro arriba/izquierda (donde da la luz) y más oscuro abajo/derecha
+    const lightSide = n[1] === 1 || n[0] === 1, k = HD ? (lightSide ? 0.5 : 0.3) : 0.35, inkMix = HD ? (lightSide ? 0.4 : 0.6) : 0.55;
+    const j = ((y + n[1]) * W + x + n[0]) * 4, c = mix(mul([lit[j], lit[j + 1], lit[j + 2]], k), HD ? DEEP : INK, inkMix), i = (y * W + x) * 4;
     out[i] = c[0]; out[i + 1] = c[1]; out[i + 2] = c[2]; out[i + 3] = 255;
+  }
+  if (HD) {   // sombra en el suelo, semitransparente
+    for (let y = 121; y <= 127; y++) for (let x = 6; x <= 58; x++) {
+      const d = ((x - 32) / 26) ** 2 + ((y - 124) / 3.2) ** 2, i = (y * W + x) * 4;
+      if (d <= 1 && out[i + 3] === 0) { out[i] = DEEP[0]; out[i + 1] = DEEP[1]; out[i + 2] = DEEP[2]; out[i + 3] = d < 0.45 ? 90 : 50; }
+    }
   }
   return out;
 }
@@ -555,5 +585,5 @@ function face(look) {
   return cache.get(key);
 }
 
-window.Character = { BASE, STYLES, COLORS, PREMIUM, randomLook, upgrade, image, face, W, H, hexOf };
+window.Character = { setHD: v => { HD = !!v; cache.clear(); }, BASE, STYLES, COLORS, PREMIUM, randomLook, upgrade, image, face, W, H, hexOf };
 })();
