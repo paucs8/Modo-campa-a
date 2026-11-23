@@ -659,20 +659,31 @@ function recordsSince(date) {
 }
 /** XP ganada desde una fecha, sumando cada cosa por el día en que se hizo.
  *  (Antes se restaban fotos del total y, al cambiar cómo se cuenta la XP, la semana se quedaba en 0.) */
-function xpSince(date, until) {
+function xpSince(date, until) { return Object.values(xpParts(date, until)).reduce((a, n) => a + n, 0); }
+/** Lo mismo que xpSince pero separado por de dónde sale: cada campaña, entrenos, cofres, diarias y récords. */
+function xpParts(date, until) {
   const from = new Date(date + 'T00:00').getTime(), to = until ? new Date(until + 'T00:00').getTime() : Infinity;
   const inRange = d => d >= date && (!until || d < until);
-  let x = 0;
-  allMissions().forEach(m => {
-    if (m.type === 'count') { Object.entries(m.log || {}).forEach(([d, n]) => { if (inRange(d)) x += n * unitXP(m); }); return; }
-    if (m.type !== 'auto' && isDone(m) && m.doneAt && m.doneAt >= from && m.doneAt < to) x += m.xp;
+  const out = {}, add = (k, v) => { if (v) out[k] = (out[k] || 0) + v; };
+  S.campaigns.forEach(c => {
+    const name = c.name || 'Campaña';
+    c.levels.forEach(l => l.missions.forEach(m => {
+      if (m.type === 'count') { Object.entries(m.log || {}).forEach(([d, n]) => { if (inRange(d)) add(name, n * unitXP(m)); }); return; }
+      if (m.type !== 'auto' && isDone(m) && m.doneAt && m.doneAt >= from && m.doneAt < to) add(name, m.xp);
+    }));
   });
-  Object.entries(trainByDay()).forEach(([d, v]) => { if (inRange(d)) x += v; });
-  Object.entries(S.daily).forEach(([d, v]) => { if (v.chest && inRange(d)) x += v.chest.xp; });
-  Object.entries(S.dailyDone).forEach(([d, ids]) => { if (inRange(d)) x += Math.min(5, ids.length) * XP.daily; });
-  x += (recordsSince(date) - (until ? recordsSince(until) : 0)) * XP.record;
-  return x;
+  Object.entries(trainByDay()).forEach(([d, v]) => { if (inRange(d)) add('Entrenos', v); });
+  Object.entries(S.daily).forEach(([d, v]) => { if (v.chest && inRange(d)) add('Cofres', v.chest.xp); });
+  Object.entries(S.dailyDone).forEach(([d, ids]) => { if (inRange(d)) add('Diarias', Math.min(5, ids.length) * XP.daily); });
+  add('Récords', (recordsSince(date) - (until ? recordsSince(until) : 0)) * XP.record);
+  return out;
 }
+/** De dónde ha sacado la XP de esta semana alguien del ranking (lo publica cada uno en su perfil). */
+const weekPartsOf = r => {
+  if (r.me) return Object.entries(xpParts(mondayKey())).sort((a, b) => b[1] - a[1]);
+  const wx = r.look && r.look.wx;
+  return wx && wx.w === mondayKey() && Array.isArray(wx.p) ? wx.p : [];
+};
 function weekXP() {
   return xpSince(mondayKey());
 }
@@ -808,7 +819,7 @@ async function publishProfile() {
   const xp = totalXP();
   const row = { user_id: cloud.user.id, name: S.name.slice(0, 24), color: S.color, level: levelOf(xp), xp,
     week: mondayKey(), week_xp: weekXP(), streak: activeStreak(), chests_week: chestsThisWeek(), updated_at: new Date().toISOString() };
-  const extras = { photo: S.photo, look: Object.assign({}, S.look, { items: wearing(), avatar: S.avatarUrl || null }) }, prev = { prev_week: lastMondayKey(), prev_week_xp: myPrevWeekXP() };
+  const extras = { photo: S.photo, look: Object.assign({}, S.look, { items: wearing(), avatar: S.avatarUrl || null, wx: { w: mondayKey(), p: Object.entries(xpParts(mondayKey())).sort((a, b) => b[1] - a[1]).slice(0, 8) } }) }, prev = { prev_week: lastMondayKey(), prev_week_xp: myPrevWeekXP() };
   // Si a la tabla le faltan columnas (SQL sin ejecutar), se publica lo que se pueda
   const tries = [[ui.profileExtras, ui.prevCols], [ui.profileExtras, false], [false, false]].filter(([e, p], i, a) => i === 0 || (e !== a[0][0] || p !== a[0][1]));
   let error = null;
@@ -1686,6 +1697,8 @@ function viewPlayer() {
         <div class="player-info"><span class="pill">${GLYPH.trophy}${pos}º esta semana</span><h2>${esc(r.name)}</h2><p>Nivel ${r.level} · ${rankFor(r.level)}</p><p class="mood-chip">${MOOD_TEXT[m]}</p></div></div></section>
     <section class="panel"><h3>Esta semana</h3>
       <div class="trio"><div><b class="num">${r.week_xp}</b><span>XP</span></div><div><b class="num">${r.streak}</b><span>${r.streak === 1 ? 'día seguido' : 'días seguidos'}</span></div><div><b class="num">${r.chests_week}</b><span>${r.chests_week === 1 ? 'cofre' : 'cofres'}</span></div></div>
+      ${(() => { const parts = weekPartsOf(r), max = Math.max(1, ...parts.map(p => p[1]));
+        return parts.length ? `<h4 class="from-t">De dónde sale su XP</h4><ul class="xp-from">${parts.map(([k, v]) => `<li><span>${esc(k)}</span><i style="--w:${Math.round(v / max * 100)}%"></i><b class="num">+${v}</b></li>`).join('')}</ul>` : `<p class="hint">${r.week_xp ? 'Aún no se ve de dónde sale su XP (le llegará cuando abra la app).' : 'Esta semana aún no ha sumado XP.'}</p>`; })()}
       <p class="hint num">${r.xp} XP en total.</p></section>
     <section class="panel"><h3>Lleva puesto <span class="label">${items.length}</span></h3>
       ${items.length ? `<div class="mini-items">${items.map(i => `<span title="${i.name}"><img src="${itemImg(i.key)}" alt="${i.name}"></span>`).join('')}</div>` : '<p class="hint">Ahora mismo no lleva ningún objeto.</p>'}</section>
@@ -1820,7 +1833,7 @@ function viewRanking() {
     body = html`<ol class="ranking">${rows.map((r, i) => {
       const value = tab === 'week' ? r.week_xp : r.xp;
       return `<li class="${r.me ? 'me' : ''} ${i < 3 ? 'top top' + (i + 1) : ''}"><button class="rank-row" data-act="openPlayer" data-id="${esc(r.user_id)}"><span class="pos num">${i + 1}</span>${avatar(r)}
-        <span class="who"><b>${esc(r.name)}${r.me ? ' <em>tú</em>' : ''}</b><small class="num">Nivel ${r.level} · racha ${r.streak} ${r.streak === 1 ? 'día' : 'días'}${tab === 'week' ? ` · ${r.chests_week} ${r.chests_week === 1 ? 'cofre' : 'cofres'}` : ''}</small></span>
+        <span class="who"><b>${esc(r.name)}${r.me ? ' <em>tú</em>' : ''}</b><small class="num">Nivel ${r.level} · racha ${r.streak} ${r.streak === 1 ? 'día' : 'días'}${tab === 'week' && !weekPartsOf(r).length ? ` · ${r.chests_week} ${r.chests_week === 1 ? 'cofre' : 'cofres'}` : ''}</small>${tab === 'week' && weekPartsOf(r).length ? `<small class="from num">${weekPartsOf(r).slice(0, 2).map(([k, v]) => `${esc(k)} <b>+${v}</b>`).join(' · ')}</small>` : ''}</span>
         <span class="score num">${value}<small>XP</small></span></button></li>`;
     })}</ol>${when(rows.length < 2, '<p class="hint">De momento estás tú solo. Dale a Invitar y pásale el enlace a quien quieras retar.</p>')}`;
     return head + viewPlaza(rows) + `<p class="hint center">Toca a alguien para ver su perfil.</p><section class="panel">${body}</section>` + ui.rivalsPicker + viewFeed();

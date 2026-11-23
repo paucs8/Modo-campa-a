@@ -1080,3 +1080,12 @@ body.sheet-open .nav{opacity:0;pointer-events:none;transform:translate(-50%,140%
 .plaza3d .podium.p1{background:linear-gradient(to bottom,#FFE59A,#F2C14E)}
 .plaza3d .podium.p2{background:linear-gradient(to bottom,#F4F4F8,#D7D7DE)}
 .plaza3d .podium.p3{background:linear-gradient(to bottom,#F6CBA6,#DFA176)}
+
+/* De dónde sale la XP */
+.rank-row .who small.from{display:block;opacity:.8;margin-top:2px;line-height:1.35}
+.rank-row .who small.from b{font-weight:700}
+.from-t{margin:14px 0 6px;font-size:.92rem}
+.xp-from{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.xp-from li{display:grid;grid-template-columns:minmax(0,10em) 1fr auto;align-items:center;gap:8px;font-size:.9rem}
+.xp-from li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xp-from li i{height:10px;border-radius:6px;background:linear-gradient(90deg,var(--accent,#C7B5FF) var(--w),rgba(0,0,0,.07) var(--w))}
