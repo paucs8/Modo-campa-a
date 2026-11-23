@@ -1309,10 +1309,15 @@ const viewColorPicker = (current, act, field = '') => {
     `<button type="button" data-act="${act}" data-k="${k}" ${field ? `data-f="${field}"` : ''} aria-pressed="${k.toLowerCase() === cur.toLowerCase()}" aria-label="Color ${k}" style="background:${k}"></button>`).join('')}
     <label class="swatch-custom ${custom ? 'on' : ''}" title="Elegir otro color" style="${custom ? `background:${cur}` : ''}"><input type="color" value="${cur}" data-color-act="${act}" ${field ? `data-f="${field}"` : ''} aria-label="Otro color"><span>+</span></label></div>`;
 };
+const avatarLatest = id => (CONFIG && CONFIG.supabaseUrl && id ? `${CONFIG.supabaseUrl}/storage/v1/object/public/avatares/${id}/latest.png?d=${today()}` : null);
+const illOf = r => (r.look && r.look.avatar) || (r.me ? S.avatarUrl : null) || avatarLatest(r.user_id);
+/** Imagen ilustrada con vuelta al pixel art si no existe todavía. */
+const illImg = (src, fallback, cls = '') => `<img ${cls ? `class="${cls}"` : ''} src="${esc(src)}" alt="" onerror="this.onerror=null;this.src='${fallback}';this.classList.add('pix');var p=this.parentNode;if(p&&p.classList)p.classList.remove('ill')">`;
 function avatar(r) {
   const bg = colorHex(r.color);
   if (r.photo) return `<span class="ava" style="background:${bg}"><img src="${esc(r.photo)}" alt=""></span>`;
-  if (r.look && r.look.avatar) return `<span class="ava ill" style="background:${bg}"><img src="${esc(r.look.avatar)}" alt=""></span>`;
+  const ill = illOf(r);
+  if (ill && r.look) return `<span class="ava ill" style="background:${bg}">${illImg(ill, Character.face(r.look))}</span>`;
   if (r.look) return `<span class="ava pix" style="background:${bg}"><img src="${Character.face(r.look)}" alt=""></span>`;
   return `<span class="ava" style="background:${bg};color:${inkFor(bg)}">${esc((r.name || '?').trim().charAt(0).toUpperCase() || '?')}</span>`;
 }
@@ -1415,11 +1420,11 @@ const P_ITEM = { llavero: 'keychain hanging from the belt', botella: 'holding a 
 const P_WHO = { chica: 'girl', chico: 'boy', neutro: 'young person' };
 /** Traduce el personaje del editor a la descripción que entiende el generador. */
 function lookToPrompt(look, items) {
-  const L = Character.upgrade(look), c = colorName, parts = [P_WHO[L.gen] || 'young person', `${skinName(L.skin)} skin`];
+  const L = Character.upgrade(look), c = colorName;
+  const beard = L.beard && L.beard !== 'no' ? (L.beard === 'bigote' ? ' with a visible mustache' : ' with a visible short full beard and mustache') : '';
+  const parts = [`${P_WHO[L.gen] || 'young person'}${beard}`, `${c(L.hair)} colored hair, ${P_HAIR[L.hairStyle] || 'short hair'}${L.hair2 ? ` with ${c(L.hair2)} tips` : ''}${L.bangs ? ' with bangs' : ''}`, `${skinName(L.skin)} skin`];
   if (L.eyes) parts.push(`${c(L.eyes)} eyes`);
-  parts.push(`${c(L.hair)} ${P_HAIR[L.hairStyle] || 'short hair'}${L.hair2 ? ` with ${c(L.hair2)} tips` : ''}${L.bangs ? ' with bangs' : ''}`);
   if (L.freckles) parts.push('freckles');
-  if (L.beard && L.beard !== 'no') parts.push(L.beard === 'bigote' ? 'a mustache' : 'a short beard');
   if (L.glasses && L.glasses !== 'no') parts.push(P_GLASSES[L.glasses]);
   if (L.head && L.head !== 'no') parts.push(['corona', 'halo'].includes(L.head) ? P_HEAD[L.head] : `${c(L.headColor)} ${P_HEAD[L.head]}`);
   const PAT = { rayas: `${c(L.stripe)} stripes`, cuadros: `a ${c(L.stripe)} plaid pattern`, franja: `a ${c(L.stripe)} chest stripe`, llamas: 'a flame print', camuflaje: 'a camo print', galaxia: 'a galaxy print', arcoiris: 'a rainbow print' };
@@ -1596,7 +1601,7 @@ function playerMood(r) {
   if (r.streak >= 1) return 'happy';
   return r.xp > 0 ? 'tired' : 'idle';
 }
-const playerImage = r => (r.look && r.look.avatar) ? r.look.avatar : Character.image(r.look || Character.BASE, { items: (r.look && r.look.items) || [], mood: playerMood(r) });
+const playerPixel = r => Character.image(r.look || Character.BASE, { items: (r.look && r.look.items) || [], mood: playerMood(r) });
 const MOOD_TEXT = { fire: 'En racha', happy: 'Activo', proud: 'Cofre abierto', tired: 'Lleva días parado', idle: 'Recién llegado' };
 /** La plaza: todos los personajes, los tres primeros en el podio y quien está parado, en el banco. */
 function viewPlaza(rows) {
@@ -1612,7 +1617,7 @@ function viewPlaza(rows) {
     const m = playerMood(r), bg = colorHex(r.color);
     return `<button class="pl m-${m} ${r.me ? 'me' : ''} ${extra}" style="left:${x}%;bottom:calc(${b}% - 3px);--s:${sc};z-index:${extra.includes('podium') ? 80 : b < 10 ? 70 : Math.round(55 - b)}" data-act="openPlayer" data-id="${esc(r.user_id)}" aria-label="${esc(r.name)}">
       <span class="tag" style="background:${bg};color:${inkFor(bg)}">${esc(r.name)}</span>${extra.includes('first') ? `<img class="crown" src="${Scene.crown()}" alt="">` : ''}
-      <img class="pl-img" src="${playerImage(r)}" alt="">${m === 'tired' ? '<span class="zzz">z<b>z</b></span>' : ''}</button>`;
+      ${illOf(r) ? illImg(illOf(r), playerPixel(r), 'pl-img ill-img') : `<img class="pl-img" src="${playerPixel(r)}" alt="">`}${m === 'tired' ? '<span class="zzz">z<b>z</b></span>' : ''}</button>`;
   };
   const hidden = others.length - placed.length;
   return html`<section class="plaza" style="background-image:url(${Scene.plaza()})">
@@ -1628,7 +1633,7 @@ function viewPlayer() {
   const pos = Math.max(1, rows.findIndex(x => x.user_id === r.user_id) + 1), bg = colorHex(r.color), ink = inkFor(bg), m = playerMood(r);
   const items = ALL_ITEMS.filter(i => ((r.look && r.look.items) || []).includes(i.key));
   return html`<section class="c-hero player-hero" style="--hero-bg:${bg};--hero-ink:${ink}" data-ink="${ink === '#111111' ? 'dark' : 'light'}">
-      <div class="player-top"><div class="player-char ${'m-' + m}"><img src="${playerImage(r)}" alt=""></div>
+      <div class="player-top"><div class="player-char ${'m-' + m}">${illOf(r) ? illImg(illOf(r), playerPixel(r), 'ill-img') : `<img src="${playerPixel(r)}" alt="">`}</div>
         <div class="player-info"><span class="pill">${GLYPH.trophy}${pos}º esta semana</span><h2>${esc(r.name)}</h2><p>Nivel ${r.level} · ${rankFor(r.level)}</p><p class="mood-chip">${MOOD_TEXT[m]}</p></div></div></section>
     <section class="panel"><h3>Esta semana</h3>
       <div class="trio"><div><b class="num">${r.week_xp}</b><span>XP</span></div><div><b class="num">${r.streak}</b><span>${r.streak === 1 ? 'día seguido' : 'días seguidos'}</span></div><div><b class="num">${r.chests_week}</b><span>${r.chests_week === 1 ? 'cofre' : 'cofres'}</span></div></div>

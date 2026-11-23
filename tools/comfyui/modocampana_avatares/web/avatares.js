@@ -7,7 +7,7 @@ const SUPABASE_URL = "https://kbifpoklblhygigtzbpd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_2RW_a6X-IlB2naB7oV8Png_tslgo8ZS";            // clave publicable (no es secreta)
 const BASE_FILE = { filename: "maniqui_00002_.png", subfolder: "modocampana" };   // cuerpo base
 const STYLE = "3D render of one stylized streetwear doll character, collectible designer fashion figure, full body, front view, standing straight with arms relaxed down along the body, feet slightly apart, oversized big head, big almond eyes with long lashes, small pouty lips, rosy cheeks, slim small body, very detailed realistic fabric textures with stitching and folds, oversized baggy layered streetwear outfit, soft studio lighting, soft shadow on the floor, plain white background, centered, ultra detailed octane render, no logos, no text, no brand names";
-const DENOISE = { nuevo: 0.82, cambio: 0.72, retoque: 0.55 }, EVERY = 60_000;
+const DENOISE = { nuevo: 0.82, cambio: 0.74, retoque: 0.68 }, EVERY = 60_000;
 const CROP = { x: 116, y: 16, w: 600, h: 1200 }, OUT = { w: 360, h: 720 };
 
 let sb = null, busy = false, baseReady = false, box = null;
@@ -29,12 +29,14 @@ function panel() {
   box.innerHTML = `<style>
     .mc-box{position:fixed;left:12px;bottom:12px;z-index:9999;background:#1e1d22;color:#eee;border:1px solid #444;border-radius:10px;padding:8px 10px;font:12px system-ui;max-width:260px;box-shadow:0 4px 16px #0006}
     .mc-box b{display:block;margin-bottom:4px}.mc-box input{width:100%;margin:2px 0;padding:4px;background:#111;color:#eee;border:1px solid #555;border-radius:6px}
-    .mc-box button{margin-top:4px;padding:4px 8px;border-radius:6px;border:0;background:#C7B5FF;color:#111;font-weight:700;cursor:pointer}
+    .mc-box textarea{width:100%;background:#111;color:#eee;border:1px solid #555;border-radius:6px;margin-top:4px}.mc-box summary{cursor:pointer;margin-top:6px;opacity:.8}.mc-box button{margin-top:4px;padding:4px 8px;border-radius:6px;border:0;background:#C7B5FF;color:#111;font-weight:700;cursor:pointer}
     .mc-box[data-kind=ok] .mc-st{color:#8f8}.mc-box[data-kind=err] .mc-st{color:#f88}.mc-box .mc-x{float:right;cursor:pointer;opacity:.6}</style>
     <span class="mc-x" title="Ocultar">×</span><b>Modo Campaña · personajes</b><div class="mc-st">Arrancando…</div><form class="mc-login" hidden>
-    <input name="e" type="email" placeholder="Tu email de la app" autocomplete="username"><input name="p" type="password" placeholder="Contraseña" autocomplete="current-password"><button>Entrar</button></form><button class="mc-all" type="button">Crear los de todos</button>`;
+    <input name="e" type="email" placeholder="Tu email de la app" autocomplete="username"><input name="p" type="password" placeholder="Contraseña" autocomplete="current-password"><button>Entrar</button></form><button class="mc-all" type="button">Crear los de todos</button>
+    <details class="mc-redo"><summary>Rehacer alguno</summary><textarea rows="3" placeholder="Nombre: lo que hay que cambiar"></textarea><button type="button">Rehacer</button></details>`;
   document.body.appendChild(box);
   box.querySelector(".mc-x").onclick = () => { box.style.display = "none"; };
+  box.querySelector(".mc-redo button").onclick = e => { const t = box.querySelector(".mc-redo textarea"); if (!t.value.trim()) return; e.target.disabled = true; redo(t.value).finally(() => { t.value = ""; e.target.disabled = false; }); };
   box.querySelector(".mc-all").onclick = e => { e.target.disabled = true; e.target.textContent = "Pidiendo…"; createForAll().finally(() => { e.target.textContent = "Crear los de todos"; e.target.disabled = false; }); };
   box.querySelector(".mc-login").onsubmit = async e => {
     e.preventDefault(); const f = e.target;
@@ -147,11 +149,11 @@ const P_ITEM = { llavero: 'keychain hanging from the belt', botella: 'holding a 
 const P_WHO = { chica: 'girl', chico: 'boy', neutro: 'young person' };
 /** Traduce el personaje del editor a la descripción que entiende el generador. */
 function lookToPrompt(look, items) {
-  const L = Object.assign({}, BASE, look), c = colorName, parts = [P_WHO[L.gen] || 'young person', `${skinName(L.skin)} skin`];
+  const L = Object.assign({}, BASE, look), c = colorName;
+  const beard = L.beard && L.beard !== 'no' ? (L.beard === 'bigote' ? ' with a visible mustache' : ' with a visible short full beard and mustache') : '';
+  const parts = [`${P_WHO[L.gen] || 'young person'}${beard}`, `${c(L.hair)} colored hair, ${P_HAIR[L.hairStyle] || 'short hair'}${L.hair2 ? ` with ${c(L.hair2)} tips` : ''}${L.bangs ? ' with bangs' : ''}`, `${skinName(L.skin)} skin`];
   if (L.eyes) parts.push(`${c(L.eyes)} eyes`);
-  parts.push(`${c(L.hair)} ${P_HAIR[L.hairStyle] || 'short hair'}${L.hair2 ? ` with ${c(L.hair2)} tips` : ''}${L.bangs ? ' with bangs' : ''}`);
   if (L.freckles) parts.push('freckles');
-  if (L.beard && L.beard !== 'no') parts.push(L.beard === 'bigote' ? 'a mustache' : 'a short beard');
   if (L.glasses && L.glasses !== 'no') parts.push(P_GLASSES[L.glasses]);
   if (L.head && L.head !== 'no') parts.push(['corona', 'halo'].includes(L.head) ? P_HEAD[L.head] : `${c(L.headColor)} ${P_HEAD[L.head]}`);
   const PAT = { rayas: `${c(L.stripe)} stripes`, cuadros: `a ${c(L.stripe)} plaid pattern`, franja: `a ${c(L.stripe)} chest stripe`, llamas: 'a flame print', camuflaje: 'a camo print', galaxia: 'a galaxy print', arcoiris: 'a rainbow print' };
@@ -168,7 +170,6 @@ function lookToPrompt(look, items) {
   (items || []).forEach(k => { if (P_ITEM[k]) parts.push(P_ITEM[k]); });
   return parts.filter(Boolean).join(', ');
 }
-
 async function createForAll() {
   const c = await client();
   const [{ data: people, error }, { data: reqs }] = await Promise.all([
@@ -186,6 +187,41 @@ async function createForAll() {
   }
   log(ok ? `Pedidos ${ok} personajes. Voy generándolos…` : "No había nadie sin personaje.", "ok");
   setTimeout(tick, 500);
+}
+
+/** Rehacer personajes concretos. Cada línea: «Nombre: lo que hay que cambiar». */
+async function redo(text) {
+  const c = await client(); let ok = 0;
+  for (const line of text.split("\n").map(l => l.trim()).filter(Boolean)) {
+    // «+Nombre: …» lo hace de cero; «… | hair=#B8432C» cambia campos del editor antes de describirlo
+    const [whoRaw, ...rest] = line.split(":"); const fresh = whoRaw.trim().startsWith("+"), who = whoRaw.replace("+", "").trim();
+    const [noteRaw, over = ""] = rest.join(":").split("|"); const note = noteRaw.trim();
+    const { data: ppl } = await c.from("profiles").select("user_id,name,look").ilike("name", who + "%").limit(1);
+    const p = ppl && ppl[0]; if (!p) { log(`No encuentro a ${who.trim()}`, "err"); continue; }
+    const { data: last } = await c.from("avatar_requests").select("image_url").eq("user_id", p.user_id).eq("status", "listo").order("id", { ascending: false }).limit(1);
+    const look = Object.assign({}, p.look || {}); const items = look.items || []; delete look.items; delete look.avatar;
+    over.split(",").map(x => x.split("=").map(y => y.trim())).forEach(([k, v]) => { if (k && v) look[k] = v; });
+    const base = !fresh && last && last[0] && last[0].image_url;
+    const { error } = await c.from("avatar_requests").insert({ user_id: p.user_id, name: p.name || "", spec: Object.assign({}, BASE, look, { items, kind: base ? "retoque" : "nuevo", note, base: base || null }), prompt: (note ? note + ", " : "") + lookToPrompt(look, items), cost: 0 });
+    if (!error) ok++;
+  }
+  log(ok ? `Pedidos ${ok} retoques…` : "No se pidió nada", ok ? "ok" : "err"); setTimeout(tick, 500);
+}
+
+/** Copia fija «latest.png» de cada uno (la usa el ranking aunque esa persona aún no haya abierto la app). */
+async function backfillLatest() {
+  try {
+    const c = await client(); const { data: s0 } = await c.auth.getSession(); if (!s0.session) return;
+    const { data } = await c.from("avatar_requests").select("user_id,image_url,id").eq("status", "listo").order("id", { ascending: false });
+    const seen = new Set();
+    for (const r of data || []) {
+      if (seen.has(r.user_id) || !r.image_url) continue; seen.add(r.user_id);
+      const head = await fetch(`${SUPABASE_URL}/storage/v1/object/public/avatares/${r.user_id}/latest.png`, { method: "HEAD" });
+      if (head.ok) continue;
+      const blob = await fetch(r.image_url).then(x => x.blob());
+      await c.storage.from("avatares").upload(`${r.user_id}/latest.png`, blob, { contentType: "image/png", upsert: true, cacheControl: "60" });
+    }
+  } catch (e) { console.warn("[Modo Campaña] latest", e); }
 }
 
 // ---------- Bucle de pedidos ----------
@@ -210,6 +246,7 @@ async function tick() {
       const up = await c.storage.from("avatares").upload(path, png, { contentType: "image/png", upsert: true });
       if (up.error) throw new Error("subida: " + up.error.message);
       const url = c.storage.from("avatares").getPublicUrl(path).data.publicUrl;
+      await c.storage.from("avatares").upload(`${req.user_id}/latest.png`, png, { contentType: "image/png", upsert: true, cacheControl: "60" });
       await c.from("avatar_requests").update({ status: "listo", image_url: url, updated_at: new Date().toISOString() }).eq("id", req.id);
       await c.functions.invoke("push", { body: { to: req.user_id, kind: "avatar", title: "🎨 Tu personaje está listo", text: "Entra en tu perfil para verlo." } }).catch(() => {});
       log(`Listo el de ${req.name || "alguien"}.`, "ok");
@@ -224,5 +261,5 @@ async function tick() {
 
 app.registerExtension({
   name: "modocampana.avatares",
-  async setup() { panel(); await tick(); setInterval(tick, EVERY); },
+  async setup() { panel(); await tick(); backfillLatest(); setInterval(tick, EVERY); },
 });
