@@ -168,8 +168,35 @@ const mission = (name, xp, extra) => Object.assign({ id: uid(), name, xp, done: 
 const count = (name, xp, target) => mission(name, xp, { type: 'count', target, count: 0 });
 const auto = (name, xp, rule, extra) => mission(name, xp, Object.assign({ type: 'auto', auto: rule }, extra));
 const level = (name, missions) => ({ id: uid(), name, missions });
+// Puntos justos: la XP de una misión la marca el esfuerzo, no lo que cada uno quiera ponerle
+const EFFORT = {
+  rapida: { label: '⚡ Rápida (+15)', one: 15, per: 3 },
+  normal: { label: '💪 Normal (+30)', one: 30, per: 6 },
+  dura: { label: '🔥 Dura (+60)', one: 60, per: 10 },
+  hito: { label: '🏆 Hito (+150)', one: 150, per: 15 },
+};
+const COUNT_XP_MAX = 200, CAMPAIGN_XP_MAX = 1200;
+/** XP según esfuerzo: de una vez, el valor fijo; si se repite, un poco por cada vez (con tope). */
+const effortXP = (k, times) => { const e = EFFORT[k] || EFFORT.normal; return times > 1 ? Math.min(COUNT_XP_MAX, Math.max(e.one, Math.round(e.per * times / 5) * 5)) : e.one; };
 const exercise = (name, sets, repMin, repMax, kind = 'peso', step = 2.5) => ({ id: uid(), name, sets, repMin, repMax, step, kind });
 
+/** Ajusta una vez las campañas creadas a mano para que den lo mismo que las demás por el mismo esfuerzo. */
+function fairCampaigns(s) {
+  const builtIn = new Set(['carnet', 'fisico']);
+  (s.campaigns || []).forEach(c => {
+    if (c.fairV === 2 || builtIn.has(c.id) || c.tpl) return;
+    const last = c.levels[c.levels.length - 1];
+    c.levels.forEach(l => l.missions.forEach(m => {
+      if (m.type === 'auto') return;
+      // Repetibles: como mucho 10 XP por vez (tope ${COUNT_XP_MAX}); de una vez: el escalón de esfuerzo más cercano, y «Hito» solo en el último nivel
+      if (m.type === 'count') m.xp = Math.min(m.xp, COUNT_XP_MAX, Math.max(30, Math.round(10 * (m.target || 1) / 5) * 5));
+      else { const tiers = l === last ? [15, 30, 60, 150] : [15, 30, 60]; m.xp = tiers.reduce((best, t) => (Math.abs(t - m.xp) < Math.abs(best - m.xp) ? t : best), tiers[0]); }
+    }));
+    const total = c.levels.reduce((a, l) => a + l.missions.reduce((b, m) => b + m.xp, 0), 0);
+    if (total > CAMPAIGN_XP_MAX) { const f = CAMPAIGN_XP_MAX / total; c.levels.forEach(l => l.missions.forEach(m => { m.xp = Math.max(5, Math.round(m.xp * f / 5) * 5); })); }
+    c.fairV = 2;
+  });
+}
 function defaultCampaigns() {
   return [
     { id: 'carnet', name: 'Carnet de conducir', icon: 'car', color: 'orange', sub: 'Del papeleo al examen práctico', levels: [
@@ -228,6 +255,11 @@ const TEMPLATES = [
     level('Trucos', [count('Intentos de kickflip', 60, 100), mission('Primer kickflip aterrizado', 80), mission('Bajar un bordillo o escalón', 50)]),
     level('Clips', [mission('Grabar una línea de 3 trucos', 60), count('Sesiones de skate', 80, 20)]),
     level('Jefe final', [mission('Editar un clip y compartirlo', 200)]) ] },
+  { key: 'fumar', emoji: '🚭', name: 'Dejar de fumar', sub: 'Día a día, sin prisa pero sin pausa', icon: 'heart', color: 'lilac', levels: () => [
+    level('Preparación', [mission('Elegir el día en que lo dejo', 15), mission('Contárselo a alguien de confianza', 30), mission('Tirar tabaco, mecheros y ceniceros', 30), count('Días apuntando cuándo y por qué fumo', 30, 5)]),
+    level('Primera semana', [count('Días sin fumar', 60, 7), mission('Superar un momento de ganas fuertes sin fumar', 60), mission('Primer café o cerveza sin cigarro', 30)]),
+    level('Primer mes', [count('Días sin fumar', 150, 30), mission('Calcular el dinero ahorrado', 15), mission('Hacer algo con el dinero ahorrado', 30), mission('Subir escaleras sin ahogarme', 30)]),
+    level('Jefe final', [count('Días sin fumar', 200, 90), mission('Ser libre de humo: 3 meses sin fumar', 150)]) ] },
   { key: 'cocina', emoji: '🍳', name: 'Aprender a cocinar', sub: 'Comer mejor y sin depender de nadie', icon: 'heart', color: 'lime', levels: () => [
     level('Básicos', [count('Recetas sencillas hechas', 50, 5), mission('Hacer la compra de la semana con lista', 30)]),
     level('Variedad', [count('Días cocinando en casa', 80, 12), count('Platos nuevos', 60, 5)]),
@@ -343,7 +375,7 @@ function migrate(s) {
   delete s.look.preset; delete s.look.star;
   s.look = Character.upgrade(s.look); // personaje por capas (v2)
   // Armario especial, semanas ganadas, cierre del lunes visto y cañas enviadas
-  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {}; s.feedSent = s.feedSent || {}; s.shields = s.shields || 0; s.shielded = s.shielded || []; s.coinLog = s.coinLog || []; s.duelsSettled = s.duelsSettled || {}; s.duelBase = s.duelBase || {}; s.vouchersDone = s.vouchersDone || {}; s.rivals = s.rivals || []; s.dailyItems = s.dailyItems || []; s.dailyDone = s.dailyDone || {}; s.passed = s.passed || {}; if (s.rivalsOnly === undefined) s.rivalsOnly = true;
+  s.wardrobe = s.wardrobe || []; s.wins = s.wins || []; s.recapSeen = s.recapSeen || null; s.nudgesSent = s.nudgesSent || {}; s.feedSent = s.feedSent || {}; s.shields = s.shields || 0; s.shielded = s.shielded || []; s.coinLog = s.coinLog || []; s.duelsSettled = s.duelsSettled || {}; s.duelBase = s.duelBase || {}; s.vouchersDone = s.vouchersDone || {}; s.rivals = s.rivals || []; fairCampaigns(s); s.dailyItems = s.dailyItems || []; s.dailyDone = s.dailyDone || {}; s.passed = s.passed || {}; if (s.rivalsOnly === undefined) s.rivalsOnly = true;
   if (s.photo === undefined) s.photo = null;
   s.v = 5;
   return s;
@@ -416,7 +448,7 @@ function currentLevelIndex(c) {
   return i < 0 ? c.levels.length - 1 : i;
 }
 function totalXP() {
-  return S.train.length * XP.train + totalRecords() * XP.record + allMissions().filter(isDone).reduce((a, m) => a + m.xp, 0) + chestTotals().xp + dailyItemsXP();
+  return trainUnits() * XP.train + totalRecords() * XP.record + allMissions().filter(isDone).reduce((a, m) => a + m.xp, 0) + chestTotals().xp + dailyItemsXP();
 }
 // ---------- Cada día: cosas propias que hacer o tomar a diario (pastilla, creatina, apuntar la comida…) ----------
 const DAILY_PRESETS = [['💊', 'Tomar la pastilla'], ['🥤', 'Tomar la creatina'], ['🍽️', 'Apuntar lo que como'], ['💧', 'Beber 2 litros de agua'], ['🍊', 'Vitaminas'], ['🧴', 'Skincare'], ['📖', 'Leer 10 minutos'], ['🦷', 'Hilo dental']];
@@ -428,6 +460,16 @@ function dailyItemStreak(id) {
   let n = 0; while ((S.dailyDone[dateKey(d)] || []).includes(id)) { n++; d.setDate(d.getDate() - 1); }
   return n;
 }
+/** Entrenos que puntúan: cada día cuenta 1, y si haces dos sesiones ese día (mañana y tarde), cuentan 2. Más de 2 no suma. */
+const TRAIN_MAX_PER_DAY = 2;
+function trainPerDay() {
+  const per = {};
+  S.train.forEach(d => { per[d] = Math.max(per[d] || 0, 1); });
+  const ses = {}; S.sessions.forEach(x => { ses[x.d] = (ses[x.d] || 0) + 1; });
+  Object.entries(ses).forEach(([d, n]) => { per[d] = Math.max(per[d] || 0, Math.min(TRAIN_MAX_PER_DAY, n)); });
+  return per;
+}
+const trainUnits = () => Object.values(trainPerDay()).reduce((a, n) => a + n, 0);
 function levelOf(xp) { let L = 1; while (xpForLevel(L + 1) <= xp) L++; return L; }
 function streak() {
   const set = new Set(S.train), d = new Date();
@@ -481,7 +523,7 @@ function questText(q) {
 // Monedas: se ganan jugando y se gastan en la tienda
 function coinsEarned() {
   const fromMissions = allMissions().filter(isDone).reduce((a, m) => a + Math.round(m.xp * (m.doneAt && m.doneAt >= COINS_CUTOFF_MS ? COINS.missionShare : COINS_OLD.missionShare)), 0);
-  const fromTrain = S.train.reduce((a, d) => a + (d >= COINS_CUTOFF ? COINS.train : COINS_OLD.train), 0);
+  const fromTrain = Object.entries(trainPerDay()).reduce((a, [d, n]) => a + n * (d >= COINS_CUTOFF ? COINS.train : COINS_OLD.train), 0);
   return fromMissions + fromTrain + totalRecords() * COINS.record + chestTotals().coins + S.coinLog.reduce((a, c) => a + c.amount, 0);
 }
 const chestReady = () => !(S.daily[today()] || {}).chest && dailyQuests().every(q => questDone(q));
@@ -2009,8 +2051,8 @@ function viewLevel(c, l, i, current, forceOpen = false) {
     ${when(open, html`<ul class="missions">${l.missions.map(m => viewMission(c, l, m))}</ul>
       ${when(ui.editing, html`<form class="addm" data-form="addMission" data-c="${c.id}" data-l="${l.id}"><input name="n" placeholder="Nueva misión" maxlength="80" required>
         <input name="t" type="number" min="1" max="999" placeholder="Veces" title="Déjalo vacío si es de una sola vez">
-        <select name="x" aria-label="XP">${[10, 20, 30, 50, 100, 200].map(v => `<option value="${v}" ${v === 30 ? 'selected' : ''}>${v} XP</option>`)}</select>
-        <button class="btn">Añadir</button>${when(c.levels.length > 1, confirmBtn('deleteLevel', l.id, 'Borrar nivel', `data-c="${c.id}" type="button"`))}</form>`)}`)}</div>`;
+        <select name="x" aria-label="Esfuerzo">${Object.entries(EFFORT).map(([k, e]) => `<option value="${k}" ${k === 'normal' ? 'selected' : ''}>${e.label}</option>`).join('')}</select>
+        <button class="btn">Añadir</button><small class="hint addm-hint">La XP va por esfuerzo para que sea justo para todos. Si pones «Veces», suma un poco por cada vez (máx. ${COUNT_XP_MAX}).</small>${when(c.levels.length > 1, confirmBtn('deleteLevel', l.id, 'Borrar nivel', `data-c="${c.id}" type="button"`))}</form>`)}`)}</div>`;
 }
 function viewMap(c) {
   const current = currentLevelIndex(c);
@@ -2614,7 +2656,7 @@ const actions = {
     const mins = parseInt(q.mins, 10) || 0, activity = (q.activity || '').trim();
     if (q.mode === 'activity' && !activity) { toast('Escribe qué actividad has hecho'); return; }
     const d = new Date(); d.setDate(d.getDate() - q.day); const day = dateKey(d);
-    let sum = null;
+    let sum = null; const xp0 = totalXP();
     update(s => {
       const ex = {};
       if (r) r.exercises.forEach(x => { if (q.skip[x.id]) return; const sets = (q.ex[x.id] || []).map(st => parseSet(x.kind, st)).filter(Boolean); if (sets.length) ex[x.id] = sets; });
@@ -2638,7 +2680,7 @@ const actions = {
     });
     if (sum === false) { toast('Pon al menos los minutos o alguna serie'); return; }
     ui.qlog = null; render();
-    sum.records = 0; sum.xp = XP.train;
+    sum.records = 0; sum.xp = Math.max(0, totalXP() - xp0);
     showWorkoutSummary(sum);
     const note = (q.note || '').trim();
     postFeed('workout', r ? `ha entrenado ${r.name}${mins ? ` · ${mins} min` : ''} · ${sum.sets} ${sum.sets === 1 ? 'serie' : 'series'}` : `ha hecho ${mins ? mins + ' min de ' : ''}${activity.toLowerCase()}${note ? ` · ${note}` : ''}`);
@@ -2823,7 +2865,7 @@ const forms = {
   addMission: (f, F) => {
     const c = findCampaign(f.dataset.c), l = c.levels.find(x => x.id === f.dataset.l), name = F.n.value.trim();
     if (!name) return;
-    const times = parseInt(F.t.value, 10), xp = parseInt(F.x.value, 10);
+    const times = parseInt(F.t.value, 10), xp = effortXP(F.x.value, times);
     update(() => l.missions.push(times > 1 ? count(name, xp, times) : mission(name, xp)), { reward: false });
     refocus(`[data-form="addMission"][data-l="${l.id}"]`);
   },
