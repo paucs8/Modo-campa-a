@@ -5,7 +5,7 @@ import numpy as np
 SRC='/mnt/user-data/uploads/output/modocampana'
 OUT=sys.argv[1] if len(sys.argv)>1 else '/tmp/claude-0/-home-claude/b459d7ae-9c62-5154-9a1d-4af3d459061c/scratchpad/parts'
 BASE=SRC+'/char_00035_.png'
-GH=72                                   # alto de la cuadrícula final
+GH=int(os.environ.get('GH','104'))                                   # alto de la cuadrícula final
 BOX=(95,20,745,1196)                    # caja de recorte fija (deja margen para pelo y ropa ancha)
 def key(a):
     r,g,b=a[...,0],a[...,1],a[...,2]
@@ -49,15 +49,15 @@ if __name__=='__main__':
         br,bg_,bb=bcol[...,0],bcol[...,1],bcol[...,2]; bl=bcol.mean(-1)
         under=bal&(np.abs(br-bg_)<14)&(np.abs(bg_-bb)<14)&(bl>140)&(bl<238)
         rows=np.arange(lay.shape[0])[:,None]
-        if name.startswith('top_'): lay|=m&under&al&(rows<=47)
-        if name.startswith('bottom_'): lay|=m&under&al&(rows>=47)
+        if name.startswith('top_'): lay|=m&under&al&(rows<=round(47*GH/72))
+        if name.startswith('bottom_'): lay|=m&under&al&(rows>=round(47*GH/72))
         pl=col.mean(-1); pgrey=(np.abs(r-g)<16)&(np.abs(g-b)<16)&(pl>170)&(pl<224)
         if name.startswith('top_'):
-            lay&=~(pgrey&(rows>=48))
+            lay&=~(pgrey&(rows>=round(48*GH/72)))
             cols_=np.arange(lay.shape[1])[None,:]
-            centre=(rows>=48)&(cols_>=11)&(cols_<=28)
+            centre=(rows>=round(48*GH/72))&(cols_>=11)&(cols_<=28)
             lay&=~(centre&~((pl>225)|(pl<110)))
-        if name.startswith('bottom_'): lay&=~(pgrey&(rows<=46))
+        if name.startswith('bottom_'): lay&=~(pgrey&(rows<=round(46*GH/72)))
         np.save(OUT+f'/{name}_skin.npy',skin)
         np.save(OUT+f'/{name}_col.npy',col); np.save(OUT+f'/{name}_al.npy',lay)
     print('ok', bcol.shape)
