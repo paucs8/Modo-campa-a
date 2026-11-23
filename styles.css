@@ -1074,3 +1074,9 @@ body.sheet-open .nav{opacity:0;pointer-events:none;transform:translate(-50%,140%
 .ill-img{image-rendering:auto!important;object-fit:contain}
 .ava.ill{box-shadow:inset 0 10px 16px rgba(255,255,255,.35),inset 0 -10px 16px rgba(0,0,0,.18)}
 .ava.ill img{position:relative}
+/* Plaza del ranking con fondo 3D (generado con ComfyUI) */
+.plaza.plaza3d{background:url(assets/plaza3d.jpg) center 60%/cover no-repeat,#EADCC8;image-rendering:auto}
+.plaza3d .podium{border:0;border-radius:12px 12px 0 0;box-shadow:inset 0 6px 10px rgba(255,255,255,.55),inset -6px 0 10px rgba(0,0,0,.08),0 -2px 12px rgba(0,0,0,.12);background:linear-gradient(to bottom,#FFF8EA,#F1E6D3)}
+.plaza3d .podium.p1{background:linear-gradient(to bottom,#FFE59A,#F2C14E)}
+.plaza3d .podium.p2{background:linear-gradient(to bottom,#F4F4F8,#D7D7DE)}
+.plaza3d .podium.p3{background:linear-gradient(to bottom,#F6CBA6,#DFA176)}

@@ -1620,7 +1620,7 @@ function viewPlaza(rows) {
       ${illOf(r) ? illImg(illOf(r), playerPixel(r), 'pl-img ill-img') : `<img class="pl-img" src="${playerPixel(r)}" alt="">`}${m === 'tired' ? '<span class="zzz">z<b>z</b></span>' : ''}</button>`;
   };
   const hidden = others.length - placed.length;
-  return html`<section class="plaza" style="background-image:url(${Scene.plaza()})">
+  return html`<section class="plaza plaza3d">
     ${podium.map((r, i) => `<span class="podium p${i + 1}" style="left:${blocks[i].x}%;height:${blocks[i].h}%"><b>${i + 1}</b><small class="num">${score(r)} XP</small></span>`)}
     ${podium.map((r, i) => person(r, blocks[i].x, blocks[i].h, 1, i === 0 ? 'first podium' : 'podium'))}
     ${placed.map(([r, p, extra]) => person(r, p.x, p.b, p.s, extra))}
