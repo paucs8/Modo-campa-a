@@ -32,9 +32,10 @@ function panel() {
     .mc-box button{margin-top:4px;padding:4px 8px;border-radius:6px;border:0;background:#C7B5FF;color:#111;font-weight:700;cursor:pointer}
     .mc-box[data-kind=ok] .mc-st{color:#8f8}.mc-box[data-kind=err] .mc-st{color:#f88}.mc-box .mc-x{float:right;cursor:pointer;opacity:.6}</style>
     <span class="mc-x" title="Ocultar">×</span><b>Modo Campaña · personajes</b><div class="mc-st">Arrancando…</div><form class="mc-login" hidden>
-    <input name="e" type="email" placeholder="Tu email de la app" autocomplete="username"><input name="p" type="password" placeholder="Contraseña" autocomplete="current-password"><button>Entrar</button></form>`;
+    <input name="e" type="email" placeholder="Tu email de la app" autocomplete="username"><input name="p" type="password" placeholder="Contraseña" autocomplete="current-password"><button>Entrar</button></form><button class="mc-all" type="button">Crear los de todos</button>`;
   document.body.appendChild(box);
   box.querySelector(".mc-x").onclick = () => { box.style.display = "none"; };
+  box.querySelector(".mc-all").onclick = e => { e.target.disabled = true; e.target.textContent = "Pidiendo…"; createForAll().finally(() => { e.target.textContent = "Crear los de todos"; e.target.disabled = false; }); };
   box.querySelector(".mc-login").onsubmit = async e => {
     e.preventDefault(); const f = e.target;
     const { error } = await (await client()).auth.signInWithPassword({ email: f.e.value.trim(), password: f.p.value });
@@ -107,6 +108,84 @@ async function cutout(blob) {
   const ox = o.getContext("2d"); ox.imageSmoothingQuality = "high";
   ox.drawImage(bmp, CROP.x, CROP.y, CROP.w, CROP.h, 0, 0, OUT.w, OUT.h);
   return new Promise(r => o.toBlob(r, "image/png"));
+}
+
+
+// ---------- Crear de golpe los personajes de los que ya juegan (con lo que tienen marcado en su editor) ----------
+const BASE = {
+  v: 2,
+  skin: '#F1C8A5', eyes: '#3B2A1E', freckles: false, blush: false, beard: 'no', earrings: false,
+  hair: '#1E1A1A', hair2: null, hairStyle: 'corto', bangs: false, braids: false,
+  glasses: 'no', head: 'no', headColor: '#2A2420',
+  top: 'sudadera', topColor: '#EDE6DA', top2: '#26201E', pattern: 'liso', stripe: '#26201E',
+  bottom: 'cargo', bottomColor: '#2C2522', legs: 'piel', legsColor: '#1E1A1A',
+  shoes: 'bambas', shoesColor: '#EDE6DA', bag: 'no', bagColor: '#26201E', chain: false, necklace: false,
+};
+const COLOR_NAMES = [['black', 20, 20, 22], ['charcoal grey', 60, 58, 62], ['grey', 140, 138, 140], ['light grey', 205, 203, 200], ['white', 245, 243, 238], ['cream', 236, 226, 205], ['beige', 201, 188, 164],
+  ['brown', 110, 70, 45], ['dark brown', 60, 36, 24], ['light brown', 160, 115, 75], ['blonde', 210, 170, 100], ['platinum blonde', 232, 220, 192], ['red', 200, 50, 45], ['ginger', 184, 67, 44], ['burgundy', 110, 30, 40],
+  ['orange', 230, 130, 40], ['yellow', 242, 193, 78], ['olive green', 74, 90, 58], ['green', 63, 140, 71], ['mint green', 150, 220, 180], ['neon green', 63, 224, 160], ['teal', 40, 130, 130], ['light blue', 140, 175, 215],
+  ['blue', 60, 100, 200], ['navy blue', 34, 56, 94], ['denim blue', 70, 95, 140], ['purple', 120, 80, 180], ['lavender', 170, 140, 240], ['pink', 229, 138, 176], ['hot pink', 240, 70, 150], ['gold', 232, 184, 74]];
+function colorName(hex) {
+  const h = String(hex || '').replace('#', ''); if (h.length < 6) return '';
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16));
+  return COLOR_NAMES.reduce((best, c) => { const d = (c[1] - r) ** 2 + (c[2] - g) ** 2 + (c[3] - b) ** 2; return d < best.d ? { d, n: c[0] } : best; }, { d: 1e9, n: '' }).n;
+}
+function skinName(hex) {
+  const h = String(hex || '#F1C8A5').replace('#', ''), l = [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16)).reduce((a, v) => a + v, 0) / 3;
+  return l > 215 ? 'very fair' : l > 190 ? 'fair' : l > 165 ? 'light tan' : l > 135 ? 'tan' : l > 100 ? 'brown' : 'dark brown';
+}
+const P_HAIR = { corto: 'short neat hair', revuelto: 'messy tousled hair', rapado: 'a buzz cut', melena: 'a chin length bob haircut', largo: 'long straight hair', mono: 'hair in a high bun', coletas: 'two high pigtails', trenzas: 'two long braids', rizos: 'short curly hair', afro: 'a big round afro', cresta: 'a spiky mohawk' };
+const P_GLASSES = { finas: 'thin round glasses', pasta: 'thick black rectangular glasses', sol: 'black sunglasses', estrella: 'star shaped sunglasses', corazon: 'heart shaped sunglasses', vr: 'a futuristic visor' };
+const P_HEAD = { gorra: 'baseball cap', gorro: 'knitted beanie', bucket: 'bucket hat', bandana: 'bandana', horquillas: 'hair clips', gato: 'beanie with cat ears', corona: 'small golden crown', vikingo: 'viking helmet with horns', halo: 'golden halo floating above the head' };
+const P_TOP = { camiseta: 'oversized t-shirt', sudadera: 'oversized hoodie', jersey: 'oversized knit sweater', capas: 'oversized t-shirt layered over a long sleeve shirt', camisa: 'open oversized shirt over a t-shirt', chaqueta: 'oversized open bomber jacket over a t-shirt' };
+const P_BOTTOM = { cargo: 'baggy cargo pants', vaqueros: 'baggy wide leg jeans', chandal: 'baggy track pants with side stripes', corto: 'loose shorts', falda: 'pleated mini skirt' };
+const P_LEGS = { medias: 'tights', rejilla: 'fishnet tights', rayas: 'striped tights' };
+const P_SHOES = { bambas: 'chunky sneakers', altas: 'high top sneakers', botas: 'chunky boots', plataformas: 'platform shoes', doradas: 'shiny golden sneakers', neon: 'neon green sneakers' };
+const P_BAG = { bolso: 'crossbody bag', mochila: 'backpack', rinonera: 'fanny pack worn across the chest', capa: 'cape', guitarra: 'guitar on the back', alas: 'small white angel wings on the back' };
+const P_ITEM = { llavero: 'keychain hanging from the belt', botella: 'holding a water bottle', auriculares: 'headphones around the neck', movil: 'holding a phone', mancuerna: 'holding a dumbbell', handycam: 'holding a small camcorder', skate: 'holding a skateboard', chestOpen: 'a small golden treasure chest at the feet',
+  raqueta: 'holding a tennis racket', pesarusa: 'holding a kettlebell', cafe: 'holding a coffee cup', libro: 'holding a book', microfono: 'holding a microphone', helado: 'holding an ice cream', perro: 'a small cute dog at the feet', gatito: 'a small cute cat at the feet', balon: 'a ball at the feet', toalla: 'a towel over the shoulder' };
+const P_WHO = { chica: 'girl', chico: 'boy', neutro: 'young person' };
+/** Traduce el personaje del editor a la descripción que entiende el generador. */
+function lookToPrompt(look, items) {
+  const L = Object.assign({}, BASE, look), c = colorName, parts = [P_WHO[L.gen] || 'young person', `${skinName(L.skin)} skin`];
+  if (L.eyes) parts.push(`${c(L.eyes)} eyes`);
+  parts.push(`${c(L.hair)} ${P_HAIR[L.hairStyle] || 'short hair'}${L.hair2 ? ` with ${c(L.hair2)} tips` : ''}${L.bangs ? ' with bangs' : ''}`);
+  if (L.freckles) parts.push('freckles');
+  if (L.beard && L.beard !== 'no') parts.push(L.beard === 'bigote' ? 'a mustache' : 'a short beard');
+  if (L.glasses && L.glasses !== 'no') parts.push(P_GLASSES[L.glasses]);
+  if (L.head && L.head !== 'no') parts.push(['corona', 'halo'].includes(L.head) ? P_HEAD[L.head] : `${c(L.headColor)} ${P_HEAD[L.head]}`);
+  const PAT = { rayas: `${c(L.stripe)} stripes`, cuadros: `a ${c(L.stripe)} plaid pattern`, franja: `a ${c(L.stripe)} chest stripe`, llamas: 'a flame print', camuflaje: 'a camo print', galaxia: 'a galaxy print', arcoiris: 'a rainbow print' };
+  let top = `${c(L.topColor)} ${P_TOP[L.top] || 'oversized t-shirt'}${L.pattern && L.pattern !== 'liso' && PAT[L.pattern] ? ` with ${PAT[L.pattern]}` : ''}`;
+  if (['capas', 'camisa', 'chaqueta'].includes(L.top)) top += ` (the inner layer is ${c(L.top2)})`;
+  parts.push(top);
+  parts.push(`${c(L.bottomColor)} ${P_BOTTOM[L.bottom] || 'baggy pants'}${L.bottom === 'chandal' ? ` with ${c(L.stripe)} stripes` : ''}`);
+  if ((L.bottom === 'corto' || L.bottom === 'falda') && L.legs && L.legs !== 'piel') parts.push(`${c(L.legsColor)} ${P_LEGS[L.legs]}`);
+  parts.push(['doradas', 'neon'].includes(L.shoes) ? P_SHOES[L.shoes] : `${c(L.shoesColor)} ${P_SHOES[L.shoes] || 'chunky sneakers'}`);
+  if (L.bag && L.bag !== 'no') parts.push(['capa', 'alas', 'guitarra'].includes(L.bag) ? P_BAG[L.bag] : `${c(L.bagColor)} ${P_BAG[L.bag]}`);
+  if (L.necklace) parts.push('a pendant necklace');
+  if (L.chain) parts.push('a silver chain on the pants');
+  if (L.earrings) parts.push('silver earrings');
+  (items || []).forEach(k => { if (P_ITEM[k]) parts.push(P_ITEM[k]); });
+  return parts.filter(Boolean).join(', ');
+}
+
+async function createForAll() {
+  const c = await client();
+  const [{ data: people, error }, { data: reqs }] = await Promise.all([
+    c.from("profiles").select("user_id,name,look"),
+    c.from("avatar_requests").select("user_id,status"),
+  ]);
+  if (error) { log("No pude leer los jugadores: " + error.message, "err"); return; }
+  const has = new Set((reqs || []).filter(r => r.status !== "error").map(r => r.user_id));
+  const todo = (people || []).filter(p => p.look && !p.look.avatar && !has.has(p.user_id));
+  let ok = 0;
+  for (const p of todo) {
+    const look = Object.assign({}, p.look); const items = look.items || []; delete look.items; delete look.avatar;
+    const { error: e } = await c.from("avatar_requests").insert({ user_id: p.user_id, name: p.name || "", spec: Object.assign({}, BASE, look, { items, kind: "nuevo" }), prompt: lookToPrompt(look, items), cost: 0 });
+    if (!e) ok++; else console.warn("[Modo Campaña]", p.name, e.message);
+  }
+  log(ok ? `Pedidos ${ok} personajes. Voy generándolos…` : "No había nadie sin personaje.", "ok");
+  setTimeout(tick, 500);
 }
 
 // ---------- Bucle de pedidos ----------
