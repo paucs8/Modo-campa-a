@@ -1089,3 +1089,14 @@ body.sheet-open .nav{opacity:0;pointer-events:none;transform:translate(-50%,140%
 .xp-from li{display:grid;grid-template-columns:minmax(0,10em) 1fr auto;align-items:center;gap:8px;font-size:.9rem}
 .xp-from li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xp-from li i{height:10px;border-radius:6px;background:linear-gradient(90deg,var(--accent,#C7B5FF) var(--w),rgba(0,0,0,.07) var(--w))}
+
+/* Entreno libre */
+.tpl.free .tpl-e{background:var(--ink,#111);color:#fff;font-weight:800}
+.fa{display:flex;flex-direction:column;gap:10px}
+.fa input[type=search]{font-size:16px;width:100%;padding:12px 14px;border-radius:14px;border:1px solid rgba(0,0,0,.12);background:var(--surface,#fff)}
+.fa .chips{align-items:center}
+.fa-list{list-style:none;margin:0;padding:0;max-height:52vh;overflow:auto;display:flex;flex-direction:column;gap:4px}
+.fa-it{width:100%;display:flex;align-items:center;gap:10px;text-align:left;padding:10px 12px;border-radius:14px;background:var(--surface,#fff);border:0}
+.fa-it .txt{flex:1;min-width:0;display:flex;flex-direction:column}
+.fa-it small{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fa-tag{font-style:normal;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:rgba(0,0,0,.07)}

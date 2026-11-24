@@ -2012,7 +2012,8 @@ function viewSharedRoutine(f) {
 function viewStartPicker() {
   return html`<div class="sheet-bg" data-act="closeSheet"></div><section class="sheet" role="dialog" aria-label="Entrenar ahora"><div class="sheet-grip"></div>
     <div class="edit-row spread"><h3>¿Qué vas a entrenar?</h3><button class="btn ghost" data-act="closeSheet">Cerrar</button></div>
-    ${S.routines.length ? `<ul class="pick-list">${S.routines.map(r => `<li><button class="tpl" data-act="startSession" data-id="${r.id}"><span class="tpl-e">${GLYPH.play}</span><span class="txt"><b>${esc(r.name)}</b><small>${r.exercises.length} ejercicios</small></span></button></li>`).join('')}</ul>` : '<p class="hint">Aún no tienes rutinas. Crea una abajo, en Rutinas.</p>'}
+    <ul class="pick-list"><li><button class="tpl free" data-act="startFree"><span class="tpl-e">＋</span><span class="txt"><b>Entreno libre</b><small>Sin rutina: vas añadiendo ejercicios sobre la marcha</small></span></button></li></ul>
+    ${S.routines.filter(r => !r.other).length ? `<ul class="pick-list">${S.routines.filter(r => !r.other).map(r => `<li><button class="tpl" data-act="startSession" data-id="${r.id}"><span class="tpl-e">${GLYPH.play}</span><span class="txt"><b>${esc(r.name)}</b><small>${r.exercises.length} ejercicios</small></span></button></li>`).join('')}</ul>` : ''}
     <p class="hint">Para baile, partidos o cualquier actividad por tiempo, mejor «Apuntar uno hecho» cuando acabes.</p></section>`;
 }
 // Apuntar un entreno ya hecho
@@ -2192,7 +2193,49 @@ function viewExerciseStats() {
 // ---------- Modo entrenamiento: un ejercicio cada vez, series con botones grandes, descanso y cronómetro ----------
 const STEP = { r: 1, kg: 2.5, km: 0.5, t: 5 };
 const mmss = sec => { sec = Math.max(0, Math.round(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
-const sessionRoutine = () => S.routines.find(x => x.id === ui.draft.routine);
+function freePush(x) {
+  const d = ui.draft; d.list = d.list || [];
+  if (!d.list.includes(x.id)) { d.list.push(x.id); d.ex[x.id] = nextSession(x).rows; }
+  d.cur = d.list.indexOf(x.id); ui.freeAdd = null; saveDraft(); render();
+  const c = document.querySelector('.ws-card'); if (c) c.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+// Entreno libre: sin rutina, vas añadiendo ejercicios de tu lista (se guardan en «Otros ejercicios»)
+const FREE = 'free';
+const sessionRoutine = () => ui.draft.routine === FREE
+  ? { id: FREE, name: 'Entreno libre', free: true, exercises: (ui.draft.list || []).map(findExercise).filter(Boolean) }
+  : S.routines.find(x => x.id === ui.draft.routine);
+/** Todos tus ejercicios (de cualquier rutina), sin repetir nombres; los más usados primero. */
+function myExercises() {
+  const seen = new Map(), uses = {};
+  S.sessions.forEach(se => Object.keys(se.ex || {}).forEach(id => { uses[id] = (uses[id] || 0) + 1; }));
+  S.routines.forEach(r => r.exercises.forEach(x => {
+    const k = x.name.toLowerCase(), prev = seen.get(k);
+    if (!prev || (uses[x.id] || 0) > (uses[prev.id] || 0)) seen.set(k, x);
+  }));
+  return [...seen.values()].sort((a, b) => (uses[b.id] || 0) - (uses[a.id] || 0) || a.name.localeCompare(b.name));
+}
+/** Tipo que se le supone a un ejercicio nuevo por su nombre. */
+function guessKind(name) {
+  const n = name.toLowerCase();
+  if (/correr|carrera|running/.test(n)) return 'run';
+  if (/plancha|hold|l-sit|lever|pino|colgarse|planche|isom/.test(n)) return 'seg';
+  if (/bici|caminar|nataci|baile|yoga|pilates|comba|cardio|el[ií]ptica|remo erg|estiramiento|p[aá]del|f[uú]tbol|baloncesto|escalada|patinar|boxeo/.test(n)) return 'min';
+  if (/flexion|dominada|fondos|sin peso|burpee|abdominal|mountain|jumping|chin-up|muscle-up|pistol|dragon|hollow|australian|elevaci[oó]n de piernas|zancadas con salto|puente de gl[uú]teo a una/.test(n)) return 'reps';
+  return 'peso';
+}
+function viewFreeAdd() {
+  const fa = ui.freeAdd, inList = new Set(ui.draft.list || []), mine = myExercises(), mineNames = new Set(mine.map(x => x.name.toLowerCase()));
+  const last = x => { const st = exerciseStats(x.id); return st.last ? 'Última vez: ' + st.last.sets.map(setText).join(', ') : KIND_SHORT[x.kind] || ''; };
+  const item = (name, sub, attrs, tag) => `<li data-n="${esc(name.toLowerCase())}"><button class="fa-it" ${attrs}><span class="txt"><b>${esc(name)}</b><small>${esc(sub)}</small></span>${tag || ''}</button></li>`;
+  const list = mine.filter(x => !inList.has(x.id)).map(x => item(x.name, last(x), `data-act="freeAdd" data-id="${x.id}"`, '<em class="fa-tag">tuyo</em>'))
+    .concat(COMMON_EXERCISES.filter(n => !mineNames.has(n.toLowerCase())).map(n => item(n, KIND_SHORT[fa.kind === 'auto' ? guessKind(n) : fa.kind], `data-act="freeAddNew" data-k="${esc(n)}"`))).join('');
+  const filter = "var q=this.value.trim().toLowerCase();this.closest('.fa').querySelectorAll('.fa-list li').forEach(function(li){li.hidden=q&&li.dataset.n.indexOf(q)<0});var c=this.closest('.fa').querySelector('.fa-new');c.hidden=!q;c.querySelector('b').textContent=this.value.trim()";
+  return html`<div class="fa panel"><div class="edit-row spread"><h3>Añadir ejercicio</h3><button class="btn ghost" data-act="freeAddToggle">Cerrar</button></div>
+    <input id="fa-q" type="search" placeholder="Buscar ejercicio" autocomplete="off" maxlength="40" oninput="${filter}" aria-label="Buscar ejercicio">
+    <div class="chips"><span class="label">Tipo si es nuevo</span>${[['auto', 'Automático'], ...Object.entries(KIND_SHORT)].map(([k, t]) => `<button class="chip-btn" data-act="freeKind" data-k="${k}" aria-pressed="${fa.kind === k}">${t}</button>`).join('')}</div>
+    <button class="btn primary fa-new" data-act="freeAddNew" hidden>+ Crear «<b></b>»</button>
+    <ul class="fa-list">${list}</ul></div>`;
+}
 function stepper(x, i, field, value, unit, label, step) {
   return `<div class="stp"><button class="stp-b" data-act="wsStep" data-x="${x}" data-i="${i}" data-f="${field}" data-d="-${step}" aria-label="Menos ${label}">−</button>
     ${setInput(x, i, field, value, '0', label, field === 'r' ? 'numeric' : 'decimal')}<span class="stp-u">${unit}</span>
@@ -2222,7 +2265,7 @@ function viewSession() {
   const { total, done } = sessionCounts(), x = xs[d.cur];
   const allDone = ex => { const rows = d.ex[ex.id] || []; return rows.length && rows.every(s => s.done); };
   const tabs = xs.map((e, i) => `<button class="ws-tab ${i === d.cur ? 'on' : ''} ${allDone(e) ? 'ok' : ''}" data-act="wsGo" data-k="${i}">${allDone(e) ? GLYPH.check : `<span>${i + 1}</span>`}${esc(e.name)}</button>`).join('');
-  let card = '<p class="hint">Esta rutina no tiene ejercicios. Añade uno abajo.</p>';
+  let card = `<p class="hint">${r.free ? 'Añade el primer ejercicio que vayas a hacer. Se guardan en tu lista para la próxima vez.' : 'Esta rutina no tiene ejercicios. Añade uno abajo.'}</p>`;
   if (x) {
     const st = exerciseStats(x.id), next = nextSession(x), rows = d.ex[x.id] || (d.ex[x.id] = []);
     const best = st.best ? setScore(st.best) : null;
@@ -2241,10 +2284,11 @@ function viewSession() {
       <div class="ws-prog"><div class="xpbar"><i style="width:${total ? done / total * 100 : 0}%"></i></div><span class="num">${done}/${total} series</span></div></div>
     <div class="ws-tabs">${tabs}</div>
     ${card}
-    ${formOpenFor(r.id) && ui.exForm.inSession ? `<div class="panel">${viewExerciseForm(r, null, true)}</div>` : '<button class="btn add-ex" data-act="newExercise" data-r="' + r.id + '" data-session="1">+ Añadir ejercicio a esta sesión</button>'}
+    ${r.free ? (ui.freeAdd ? viewFreeAdd() : `<button class="btn add-ex ${xs.length ? '' : 'primary'}" data-act="freeAddToggle">+ Añadir ejercicio</button>${when(x && !(d.ex[x.id] || []).some(s => s.done), `<button class="btn ghost" data-act="freeRemove" data-x="${x ? x.id : ''}">Quitar ${x ? esc(x.name) : ''} de este entreno</button>`)}`)
+      : formOpenFor(r.id) && ui.exForm.inSession ? `<div class="panel">${viewExerciseForm(r, null, true)}</div>` : '<button class="btn add-ex" data-act="newExercise" data-r="' + r.id + '" data-session="1">+ Añadir ejercicio a esta sesión</button>'}
     <div class="ws-end"><button class="btn primary wide" data-act="saveSession">Terminar y guardar</button>
       <button class="btn ghost" data-act="discardSession">${ui.armed === 'session' ? '¿Seguro? Toca otra vez para descartar' : 'Descartar entreno'}</button>
-      <p class="hint">Marca cada serie con ✓ al hacerla y empieza el descanso. Lo que dejes vacío no se guarda. Los ejercicios que añadas se quedan en la rutina.</p></div>
+      <p class="hint">Marca cada serie con ✓ al hacerla y empieza el descanso. Lo que dejes vacío no se guarda. ${r.free ? 'Los ejercicios nuevos se quedan guardados en «Otros ejercicios», con su historial.' : 'Los ejercicios que añadas se quedan en la rutina.'}</p></div>
     <div class="rest ${rest ? 'on' : ''}" role="timer" aria-live="off"><span class="label">Descanso</span><b class="num" data-rest>${rest ? mmss((rest.until - Date.now()) / 1000) : ''}</b>
       <button class="rest-b" data-act="wsRest" data-d="-15">−15</button><button class="rest-b" data-act="wsRest" data-d="15">+15</button><button class="rest-b skip" data-act="wsRest" data-d="0">Saltar</button>
       <i class="rest-bar" data-restbar style="width:${rest ? (rest.until - Date.now()) / 1000 / rest.total * 100 : 0}%"></i></div></section>`;
@@ -2284,7 +2328,7 @@ function showWorkoutSummary(sum) {
   el.addEventListener('click', e => { if (e.target === el || e.target.closest('[data-close]')) el.remove(); });
   document.body.appendChild(el);
 }
-const sessionOpen = () => !!ui.draft && S.routines.some(r => r.id === ui.draft.routine);
+const sessionOpen = () => !!ui.draft && (ui.draft.routine === FREE || S.routines.some(r => r.id === ui.draft.routine));
 function viewBody() {
   return sessionOpen() ? viewSession() : viewWeight() + viewTraining() + viewRoutines();
 }
@@ -2728,12 +2772,40 @@ const actions = {
     ui.draft = { routine: r.id, started: Date.now(), cur: 0, restSec: 90, ex: Object.fromEntries(r.exercises.map(x => [x.id, nextSession(x).rows])) };
     saveDraft(); render(); scrollTop0();
   },
+  startFree: () => {
+    ui.startPick = false; ui.editing = false; ui.freeAdd = { kind: 'auto' };
+    { const b = S.campaigns.find(c => c.tracker === 'body'); if (b) ui.view = b.id; }
+    ui.draft = { routine: FREE, list: [], started: Date.now(), cur: 0, restSec: 90, ex: {} };
+    saveDraft(); render(); scrollTop0();
+  },
+  freeAddToggle: () => { ui.freeAdd = ui.freeAdd ? null : { kind: 'auto' }; render(); const i = document.getElementById('fa-q'); if (i) i.focus(); },
+  freeKind: el => { ui.freeAdd.kind = el.dataset.k; const q = (document.getElementById('fa-q') || {}).value || ''; render(); const i = document.getElementById('fa-q'); if (i && q) { i.value = q; i.dispatchEvent(new Event('input')); } },
+  freeAdd: el => { const x = findExercise(el.dataset.id); if (x) freePush(x); },
+  freeAddNew: el => {
+    const name = (el.dataset.k || (document.getElementById('fa-q') || {}).value || '').trim().slice(0, 40);
+    if (!name) return;
+    const known = myExercises().find(x => x.name.toLowerCase() === name.toLowerCase());
+    if (known) { freePush(known); return; }
+    const kind = ui.freeAdd && ui.freeAdd.kind !== 'auto' ? ui.freeAdd.kind : guessKind(name);
+    const x = { id: uid(), name, kind, sets: 3, reps: kind === 'peso' ? [8, 12] : kind === 'reps' ? [8, 15] : undefined, step: kind === 'peso' ? 2.5 : undefined };
+    update(s => {
+      let other = s.routines.find(rr => rr.other);
+      if (!other) { other = { id: uid(), name: 'Otros ejercicios', other: true, exercises: [] }; s.routines.push(other); }
+      other.exercises.push(x);
+    });
+    freePush(findExercise(x.id) || x);
+    toast(`${name} guardado en tu lista`);
+  },
+  freeRemove: el => {
+    const d = ui.draft; d.list = (d.list || []).filter(id => id !== el.dataset.x); delete d.ex[el.dataset.x];
+    d.cur = Math.max(0, Math.min(d.cur, d.list.length - 1)); saveDraft(); render();
+  },
   discardSession: () => {
     if (ui.armed !== 'session') { ui.armed = 'session'; render(); return; }
     ui.armed = null; ui.draft = null; ui.exForm = null; saveDraft(); render();
   },
   addSet: el => {
-    const rows = ui.draft.ex[el.dataset.x], x = S.routines.find(r => r.id === ui.draft.routine).exercises.find(e => e.id === el.dataset.x);
+    const rows = ui.draft.ex[el.dataset.x], x = sessionRoutine().exercises.find(e => e.id === el.dataset.x);
     rows.push(rows.length ? Object.assign({}, rows[rows.length - 1], { done: false }) : blankSet(x));
     saveDraft(); render();
   },
@@ -3012,7 +3084,7 @@ const actions = {
   },
   removeSet: el => { ui.draft.ex[el.dataset.x].pop(); saveDraft(); render(); },
   saveSession: () => {
-    const r = S.routines.find(x => x.id === ui.draft.routine), ex = {};
+    const r = sessionRoutine(), ex = {};
     r.exercises.forEach(x => {
       const sets = (ui.draft.ex[x.id] || []).map(s => parseSet(x.kind, s)).filter(Boolean);
       if (sets.length) ex[x.id] = sets;
@@ -3024,7 +3096,7 @@ const actions = {
     ui.draft = null; saveDraft();
     update(s => {
       const day = logDate();
-      s.sessions.push({ id: uid(), d: day, routine: r.id, rname: r.name, ex, mins: sum.secs ? Math.round(sum.secs / 60) : 0 }); s.sessions.sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
+      s.sessions.push({ id: uid(), d: day, routine: r.free ? null : r.id, rname: r.name, ex, mins: sum.secs ? Math.round(sum.secs / 60) : 0 }); s.sessions.sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
       if (s.sessions.length > 600) s.sessions.shift();
       if (!s.train.includes(day)) { s.train.push(day); s.train.sort(); }
     });
