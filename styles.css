@@ -478,7 +478,7 @@ textarea{font-size:16px}
 .chip-btn.special[aria-pressed="true"]{background:#C98A00;border-color:#C98A00;color:#fff}
 .wardrobe{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .wardrobe li{display:flex;align-items:center;gap:12px;background:var(--bg);border-radius:18px;padding:8px 12px}
-.wardrobe li>img{flex:none;width:40px;height:auto;image-rendering:pixelated}
+.wardrobe li>img{flex:none;width:56px;height:56px;object-fit:contain;image-rendering:auto;filter:drop-shadow(0 3px 4px rgba(0,0,0,.18))}
 .wardrobe .txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .wardrobe .txt b{font-size:15px}
 .wardrobe .txt small{font-size:12px;color:var(--muted)}
@@ -1059,7 +1059,7 @@ body.sheet-open .nav{opacity:0;pointer-events:none;transform:translate(-50%,140%
 .avatar-panel .avatar-status.st-error{color:#B8432C}
 .top .avatar.ill img{image-rendering:auto;object-fit:cover;object-position:50% 0;transform:scale(1.5);transform-origin:50% 0}
 .look-preview{position:relative}
-.look-preview .draft-thumb{position:absolute;right:6px;bottom:6px;width:46px;background:#fffd;border-radius:10px;padding:3px;text-align:center;box-shadow:0 2px 6px #0003}
+.look-preview .draft-thumb{position:absolute;right:6px;bottom:6px;width:46px;z-index:2;background:#fffd;border-radius:10px;padding:3px;text-align:center;box-shadow:0 2px 6px #0003}
 .look-preview .draft-thumb img{width:100%;height:auto;display:block}
 .look-preview .draft-thumb small{font-size:9px;font-weight:800;color:#111}
 .avatar-box{margin-top:12px;border-top:1px dashed #0002;padding-top:10px}
@@ -1100,3 +1100,9 @@ body.sheet-open .nav{opacity:0;pointer-events:none;transform:translate(-50%,140%
 .fa-it .txt{flex:1;min-width:0;display:flex;flex-direction:column}
 .fa-it small{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fa-tag{font-style:normal;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:rgba(0,0,0,.07)}
+
+.draft-thumb.text{width:auto;height:auto;padding:5px 10px;border-radius:99px;font-size:11px;font-weight:700;background:rgba(0,0,0,.55);color:#fff}
+.node-me.ill img,.mp img.ill-img,.nudge-char.ill-img{image-rendering:auto;object-fit:contain}
+.look-preview .draft-thumb.text{width:auto;background:rgba(0,0,0,.6);color:#fff}
+.node-me.ill{width:58px;filter:drop-shadow(0 4px 3px rgba(0,0,0,.2))}
+.item img[src*="items3d"],.mini-items img[src*="items3d"],.lv-opts img[src*="items3d"]{image-rendering:auto}

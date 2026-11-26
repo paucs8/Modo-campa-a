@@ -91,7 +91,10 @@ const ITEM_SPRITES = {
   toalla: [['...kkkkkkk......', '...kwwwwwk......', '...kbbbbbk......', '...kwwwwwk......', '...kwwwwwk......', '...kbbbbbk......', '...kwwwwwk......', '...kwwwwwk......', '...kbbbbbk......', '...kwwwwwk......', '...kkkkkkk......'], { k: '#2a1e1c', w: '#eeeae4', b: '#4690DC' }],
 };
 const spriteCache = {};
+// Objetos en 3D generados en ComfyUI (assets/items3d); el pixel queda solo de reserva
+const ITEMS3D = new Set(['balon', 'botella', 'cafe', 'chestOpen', 'gatito', 'handycam', 'helado', 'libro', 'llavero', 'mancuerna', 'microfono', 'movil', 'perro', 'pesarusa', 'raqueta', 'skate', 'auriculares', 'toalla']);
 function itemImg(key) {
+  if (ITEMS3D.has(key)) return `assets/items3d/${key}.png`;
   if (IMG[key]) return IMG[key];
   if (spriteCache[key]) return spriteCache[key];
   const sp = ITEM_SPRITES[key]; if (!sp) return '';
@@ -1132,7 +1135,7 @@ async function showNextNudge() {
   const el = document.createElement('div');
   el.className = 'lvlup nudge-pop';
   el.innerHTML = html`<div style="background:${colorHex(from.color)};color:${inkFor(colorHex(from.color))}"><span class="pill">${GLYPH.star}¡Te dan caña!</span>
-    ${from.look ? `<img class="nudge-char" src="${Character.image(from.look, { items: from.look.items || [], mood: 'fire' })}" alt="">` : ''}
+    ${from.look ? (illOf(from) ? illImg(illOf(from), Character.image(from.look, { items: from.look.items || [], mood: 'fire' }), 'nudge-char ill-img', from.look.items) : `<img class="nudge-char" src="${Character.image(from.look, { items: from.look.items || [], mood: 'fire' })}" alt="">`) : ''}
     <h2>${esc(from.name)} te dice: ¡vamos!</h2><p class="hint" style="color:inherit">Haz una misión hoy y no te quedes atrás.</p>
     <button class="btn dark wide">¡Voy!</button></div>`;
   el.addEventListener('click', async () => {
@@ -1164,7 +1167,7 @@ function maybeShowRecap() {
   const el = document.createElement('div');
   el.className = 'lvlup recap-pop';
   el.innerHTML = html`<div><span class="pill">${GLYPH.trophy}Semana terminada</span><h2>${won ? '¡Has ganado la semana!' : `Ganó ${esc(rows[0].name)}`}</h2>
-    <div class="mini-podium">${order.map(i => `<div class="mp mp${i + 1}"><img src="${Character.image(top[i].look || Character.BASE, { items: (top[i].look && top[i].look.items) || [], mood: i === 0 ? 'fire' : 'happy' })}" alt=""><span class="mp-block"><b>${i + 1}</b><small class="num">${top[i].last_xp} XP</small></span><span class="mp-name">${esc(top[i].name)}</span></div>`).join('')}</div>
+    <div class="mini-podium">${order.map(i => `<div class="mp mp${i + 1}">${illImg(illOf(top[i]) || '', Character.image(top[i].look || Character.BASE, { items: (top[i].look && top[i].look.items) || [], mood: i === 0 ? 'fire' : 'happy' }), 'ill-img', top[i].look && top[i].look.items)}<span class="mp-block"><b>${i + 1}</b><small class="num">${top[i].last_xp} XP</small></span><span class="mp-name">${esc(top[i].name)}</span></div>`).join('')}</div>
     <p class="hint on-lilac">${pos < 0 ? 'La semana pasada no sumaste XP. Esta semana empieza de cero para todos.' : won ? 'Ya puedes ponerte la corona en tu perfil.' : `Quedaste ${pos + 1}º de ${rows.length}. Esta semana empieza de cero.`}</p>
     <button class="btn dark wide">${won ? 'Ponerme la corona' : 'A por esta semana'}</button></div>`;
   el.addEventListener('click', () => { el.remove(); if (won) { ui.view = 'profile'; ui.lookTab = 'extras'; render(); scrollTop0(); } });
@@ -1563,7 +1566,7 @@ function viewProfile() {
     <section class="panel"><h3>Tu personaje <button class="btn ghost" data-act="randomLook">Aleatorio</button></h3>
       <div class="look-row"><span class="label">Eres</span><div class="chips">${Object.entries({ chica: 'Chica', chico: 'Chico', neutro: 'Prefiero no decir' }).map(([k, t]) => `<button type="button" class="chip-btn" data-act="setLook" data-f="gen" data-v="${k}" aria-pressed="${(Character.upgrade(S.look).gen || '') === k}">${t}</button>`).join('')}</div></div>
       <div class="look-tabs" role="tablist">${Object.entries(LOOK_TABS).map(([k, t]) => `<button role="tab" data-act="lookTab" data-k="${k}" aria-selected="${ui.lookTab === k}">${t}</button>`).join('')}</div>
-      <div class="look-editor"><div class="look-preview" style="background:${colorHex(S.color)}">${viewAxis('happy')}${S.avatarUrl && avatarPending() ? `<span class="draft-thumb" title="Cómo quedará (borrador)"><img class="pix" src="${Character.image(S.look, { items: wearing() })}" alt=""><small>Borrador</small></span>` : ''}</div>
+      <div class="look-editor"><div class="look-preview" style="background:${colorHex(S.color)}">${viewAxis('happy')}${S.avatarUrl && avatarPending() ? '<span class="draft-thumb text">Cambios sin enviar</span>' : ''}</div>
         <div class="look-controls">${viewLookControls(L)}</div></div>
       <p class="hint">Lo que desbloqueas en el inventario (cascos, llavero, handycam, skate) se lo pone tu personaje.</p>
       ${viewAvatarPanel()}</section>
@@ -2387,7 +2390,7 @@ function viewMap(c) {
     return html`<div class="node-wrap" style="left:${X[i % 4]}%;top:${i * ROW + ROW / 2}px">
       <button class="node ${state} ${i === sel ? 'sel' : ''} ${isBoss ? 'is-boss' : ''}" data-act="pickLevel" data-k="${i}" aria-pressed="${i === sel}" aria-label="Nivel ${i + 1}: ${esc(l.name)}" ${state === 'current' ? `style="--node:${colorVar(c)}"` : ''}>${ring}<span>${face}</span></button>
       <span class="node-name ${side}">${esc(l.name)}</span>
-      ${when(i === current && !(b && b.defeated), `<div class="node-me ${side === 'left' ? 'right' : 'left'} mood-${m.kind}" aria-hidden="true"><img src="${Character.image(S.look, { items: wearing(), mood: m.kind })}" alt=""></div>`)}</div>`;
+      ${when(i === current && !(b && b.defeated), `<div class="node-me ${side === 'left' ? 'right' : 'left'} mood-${m.kind} ${S.avatarUrl ? 'ill' : ''}" aria-hidden="true">${S.avatarUrl ? illImg(S.avatarUrl, Character.image(S.look, { items: wearing(), mood: m.kind }), '', wearing()) : `<img src="${Character.image(S.look, { items: wearing(), mood: m.kind })}" alt="">`}</div>`)}</div>`;
   });
   return html`<section class="stack">${head}
     <div class="path" style="height:${n * ROW}px;--cc:${colorVar(c)}">
@@ -2420,11 +2423,11 @@ function viewShop() {
     <section class="panel"><h3>Armario especial <span class="label">para tu personaje</span></h3>
       <ul class="wardrobe">${Object.entries(Character.PREMIUM).map(([key, def]) => {
         const [field, value] = key.split(':'), st = unlockState(key), armed = ui.armed === 'ward:' + key;
-        const preview = Object.assign({}, Character.upgrade(S.look), { [field]: value }, value === 'llamas' ? { stripe: '#E07A2E', topColor: '#1F1F24' } : {}, value === 'capa' ? { bagColor: '#C0392B' } : {});
+        
         const action = st.ok ? '<span class="owned">Lo tienes</span>'
           : st.cost ? (have >= st.cost ? `<button class="btn ${armed ? 'primary' : ''}" data-act="buyWardrobe" data-k="${key}">${armed ? '¿Comprar?' : 'Comprar'}</button>` : `<span class="need num">Te faltan ${st.cost - have}</span>`)
           : `<span class="need">${esc(st.how)}</span>`;
-        return `<li class="${st.ok ? 'got' : ''}"><img src="${Character.image(preview)}" alt=""><div class="txt"><b>${esc(def.name)}</b>${when(st.cost, coinBadge(st.cost || 0))}</div>${action}</li>`;
+        return `<li class="${st.ok ? 'got' : ''}"><img class="w3d" src="assets/wardrobe/${field}_${value}.png" alt="" loading="lazy"><div class="txt"><b>${esc(def.name)}</b>${when(st.cost, coinBadge(st.cost || 0))}</div>${action}</li>`;
       })}</ul></section>
     ${when(recent.length, html`<section class="panel"><h3>Canjeado</h3><ul class="hist">${recent.map(p =>
       `<li><b>${esc(p.name)}</b><span class="num">${shortDate(p.d)} · ${p.cost}</span>${when(ui.editing, confirmBtn('deletePurchase', p.id, 'Devolver'))}</li>`)}</ul></section>`)}`;
